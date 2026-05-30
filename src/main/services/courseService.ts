@@ -5,41 +5,59 @@ export function saveCourse(course: Course): void {
   const db = getDatabase()
   
   const existingCourse = db.prepare('SELECT id FROM courses WHERE root_path = ?').get(course.root_path) as any
+  const finalId = existingCourse ? existingCourse.id : course.id
 
-  if (existingCourse) {
-    db.prepare('UPDATE courses SET is_hidden = 0, last_accessed = ? WHERE id = ?')
-      .run(course.last_accessed, existingCourse.id)
-    return
-  }
-  
   const insertCourse = db.prepare(`
-    INSERT OR IGNORE INTO courses (id, title, root_path, created_at, last_accessed, is_hidden)
+    INSERT INTO courses (id, title, root_path, created_at, last_accessed, is_hidden)
     VALUES (?, ?, ?, ?, ?, 0)
+    ON CONFLICT(id) DO UPDATE SET 
+      title = excluded.title,
+      is_hidden = 0
+    ON CONFLICT(root_path) DO UPDATE SET
+      title = excluded.title,
+      is_hidden = 0
   `)
 
   const insertSection = db.prepare(`
     INSERT INTO sections (id, course_id, title, order_index)
     VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET 
+      title = excluded.title,
+      order_index = excluded.order_index
   `)
 
   const insertVideo = db.prepare(`
     INSERT INTO videos (id, section_id, title, file_path, order_index)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET 
+      title = excluded.title,
+      file_path = excluded.file_path,
+      order_index = excluded.order_index
+    ON CONFLICT(file_path) DO UPDATE SET
+      title = excluded.title,
+      section_id = excluded.section_id,
+      order_index = excluded.order_index
   `)
 
-  const transaction = db.transaction((course: Course) => {
-    insertCourse.run(course.id, course.title, course.root_path, course.created_at, course.last_accessed)
+  const transaction = db.transaction((courseData: Course, courseId: string) => {
+    insertCourse.run(courseId, courseData.title, courseData.root_path, courseData.created_at, courseData.last_accessed)
     
-    course.sections.forEach((section) => {
-      insertSection.run(section.id, course.id, section.title, section.order_index)
+    courseData.sections.forEach((section) => {
+      const existingSection = db.prepare('SELECT id FROM sections WHERE course_id = ? AND title = ?').get(courseId, section.title) as any
+      const sectionId = existingSection ? existingSection.id : section.id
+
+      insertSection.run(sectionId, courseId, section.title, section.order_index)
       
       section.videos.forEach((video) => {
-        insertVideo.run(video.id, section.id, video.title, video.file_path, video.order_index)
+        const existingVideo = db.prepare('SELECT id FROM videos WHERE file_path = ?').get(video.file_path) as any
+        const videoId = existingVideo ? existingVideo.id : video.id
+        
+        insertVideo.run(videoId, sectionId, video.title, video.file_path, video.order_index)
       })
     })
   })
 
-  transaction(course)
+  transaction(course, finalId)
 }
 
 export function getAllCourses(): Course[] {
@@ -108,11 +126,10 @@ export function updateVideoProgress(videoId: string, progress: number, isComplet
     logActivity(diff)
   }
 
-  // Check if course is newly completed
   if (courseId && isCompleted) {
-    const course = getCourseById(courseId) as any
-    if (course && !course.is_completed) {
-      const allVideos = course.sections.flatMap(s => s.videos)
+    const courseData = getCourseById(courseId) as any
+    if (courseData && !courseData.is_completed) {
+      const allVideos = courseData.sections.flatMap(s => s.videos)
       const finishedCount = allVideos.filter(v => v.is_completed).length
       if (finishedCount === allVideos.length) {
          db.prepare('UPDATE courses SET is_completed = 1 WHERE id = ?').run(courseId)
@@ -219,7 +236,6 @@ export function deleteCoursePermanently(courseId: string): void {
   db.prepare('DELETE FROM courses WHERE id = ?').run(courseId)
 }
 
-// Note Logic
 export function saveNote(videoId: string, timestamp: number, content: string): void {
   const db = getDatabase()
   const id = uuidv4()
@@ -247,11 +263,11 @@ export function deleteNote(noteId: string): void {
 }
 
 export function exportNotesMarkdown(courseId: string): string {
-  const course = getCourseById(courseId)
-  if (!course) return ''
+  const courseData = getCourseById(courseId)
+  if (!courseData) return ''
 
   const notes = getNotesForCourse(courseId)
-  let md = `# Learning Notes: ${course.title}\n\n`
+  let md = `# Learning Notes: ${courseData.title}\n\n`
   md += `Exported on: ${new Date().toLocaleString()}\n\n`
 
   let currentSection = ''

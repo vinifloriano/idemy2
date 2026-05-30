@@ -72,33 +72,36 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSelectCourse, onShowStreak 
     <div className="flex flex-1 h-full w-full overflow-hidden text-slate-200">
       
       {/* Sidebar */}
-      <div className="w-64 glass-panel border-r border-white/5 p-4 flex flex-col gap-6 shrink-0 z-20">
-        <div className="flex items-center gap-2 px-2 py-2 mb-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg shadow-brand-500/30">
+      <div className="w-20 md:w-64 glass-panel border-r border-white/5 p-4 flex flex-col gap-6 shrink-0 z-20 transition-all duration-300">
+        <div className="flex items-center justify-center md:justify-start gap-2 px-2 py-2 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0">
             <Play className="w-4 h-4 text-white fill-white ml-0.5" />
           </div>
-          <span className="font-bold text-xl tracking-tight text-white">Idemy</span>
+          <span className="font-bold text-xl tracking-tight text-white hidden md:inline truncate">Idemy</span>
         </div>
 
         <div className="space-y-1">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2">Library</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 hidden md:block">Library</div>
             <button
               onClick={() => setSelectedFilter('all')}
-              className={`flex items-center gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'all' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              className={`flex items-center justify-center md:justify-start gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'all' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              title="All Courses"
             >
-              <Library className="w-4 h-4" /> All Courses
+              <Library className="w-4 h-4 shrink-0" /> <span className="hidden md:inline truncate">All Courses</span>
             </button>
             <button
               onClick={() => setSelectedFilter('inProgress')}
-              className={`flex items-center gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'inProgress' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              className={`flex items-center justify-center md:justify-start gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'inProgress' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              title="In Progress"
             >
-              <Clock className="w-4 h-4" /> In Progress
+              <Clock className="w-4 h-4 shrink-0" /> <span className="hidden md:inline truncate">In Progress</span>
             </button>
             <button
               onClick={() => setSelectedFilter('completed')}
-              className={`flex items-center gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'completed' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              className={`flex items-center justify-center md:justify-start gap-3 w-full px-2 py-2 rounded text-sm transition-colors ${selectedFilter === 'completed' ? 'bg-brand-500/20 text-brand-300 font-medium' : 'text-slate-400 hover:bg-white/5'}`}
+              title="Completed"
             >
-              <CheckCircle className="w-4 h-4" /> Completed
+              <CheckCircle className="w-4 h-4 shrink-0" /> <span className="hidden md:inline truncate">Completed</span>
             </button>
         </div>
         
@@ -106,20 +109,24 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSelectCourse, onShowStreak 
           <div 
             onClick={onShowStreak}
             className="p-4 rounded-xl bg-surface-900 border border-white/5 relative overflow-hidden group hover:border-brand-500/30 transition-colors cursor-pointer"
+            title={`${streakData.streak} Days Streak`}
           >
-            <div className="text-xs text-slate-400 mb-1 font-medium group-hover:text-slate-300 transition-colors">Daily Streak</div>
-            <div className="text-xl font-bold text-white flex items-center gap-2">
-              {streakData.streak} Days <Flame className={`w-5 h-5 ${streakData.streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-slate-600'}`} />
+            <div className="text-xs text-slate-400 mb-1 font-medium group-hover:text-slate-300 transition-colors hidden md:block">Daily Streak</div>
+            <div className="text-xl font-bold text-white flex items-center justify-center md:justify-start gap-2">
+              <span className="hidden md:inline">{streakData.streak} Days</span> 
+              <Flame className={`w-5 h-5 shrink-0 ${streakData.streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-slate-600'}`} />
             </div>
-            <div className="mt-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
-               <span className="text-slate-500">Daily Goal</span>
-               <span className="text-brand-400">{Math.round(progressPercent)}%</span>
-            </div>
-            <div className="mt-1 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-               <div 
-                className="h-full bg-gradient-to-r from-orange-500 to-brand-500 transition-all duration-1000" 
-                style={{ width: `${progressPercent}%` }}
-              ></div>
+            <div className="hidden md:block">
+              <div className="mt-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                 <span className="text-slate-500">Daily Goal</span>
+                 <span className="text-brand-400">{Math.round(progressPercent)}%</span>
+              </div>
+              <div className="mt-1 h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                 <div 
+                  className="h-full bg-gradient-to-r from-orange-500 to-brand-500 transition-all duration-1000" 
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
+              </div>
             </div>
           </div>
         </div>
@@ -129,33 +136,36 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSelectCourse, onShowStreak 
       <div className="flex-1 flex flex-col h-full z-10 relative overflow-hidden">
         
         {/* Header */}
-        <header className="h-20 px-8 flex items-center justify-between shrink-0 border-b border-white/5">
-          
-          <div className="flex items-center gap-4">
-            <div className="relative group">
+        <header className="min-h-20 px-8 flex items-center justify-end shrink-0 border-b border-white/5 py-4">
+          <div className="flex flex-col-reverse md:flex-row items-end md:items-center gap-4 w-full md:w-auto">
+            <div className="relative group w-full md:w-48">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-brand-400 transition-colors" />
               <input 
                 type="text" 
-                placeholder="Search (Cmd+K)" 
+                placeholder="Search" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 bg-surface-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/50 w-56 text-slate-200 transition-all placeholder:text-slate-500 shadow-inner"
+                className="pl-9 pr-0 py-2 bg-surface-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/50 w-full text-slate-200 transition-all placeholder:text-slate-500 shadow-inner"
               />
             </div>
-            <button 
-              onClick={handleAddCourse}
-              className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 border border-white/5"
-            >
-              <FolderPlus className="w-4 h-4" />
-              Add Local
-            </button>
-            <button 
-              onClick={() => setShowYoutubeModal(true)}
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 border border-red-500/20 shadow-lg shadow-red-500/10"
-            >
-              <SquarePlay className="w-4 h-4" />
-              Import YouTube
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleAddCourse}
+                className="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 border border-white/5 whitespace-nowrap"
+                title="Add Local"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span className="hidden md:inline">Add Local</span>
+              </button>
+              <button 
+                onClick={() => setShowYoutubeModal(true)}
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 border border-red-500/20 shadow-lg shadow-red-500/10 whitespace-nowrap"
+                title="Import YouTube"
+              >
+                <SquarePlay className="w-4 h-4" />
+                <span className="hidden md:inline">Import YouTube</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -199,7 +209,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSelectCourse, onShowStreak 
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
               {filteredCourses.map((course) => (
                 <CourseCard key={course.id} course={course} onClick={() => onSelectCourse(course)} />
               ))}

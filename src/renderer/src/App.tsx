@@ -2,6 +2,7 @@ import { useState } from 'react'
 import LandingPage from './components/LandingPage'
 import CourseView from './components/CourseView'
 import DailyStreak from './components/DailyStreak'
+import DownloadProgressPopup from './components/DownloadProgressPopup'
 import { Course } from '../../shared/types'
 
 function App(): JSX.Element {
@@ -40,6 +41,8 @@ function App(): JSX.Element {
         {view === 'streak' && (
           <DailyStreak onBack={handleBack} />
         )}
+
+        <DownloadProgressPopup />
       </div>
     </div>
   )

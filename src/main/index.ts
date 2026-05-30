@@ -6,11 +6,20 @@ import { initDatabase } from './db/database'
 import { scanCourseFolder } from './services/scanner'
 import { getAllCourses, getCourseById, saveCourse, updateVideoProgress, renameCourse, updateCourseIcon, updateCourseLastVideo, removeCourse, resetCourseProgress, getDailyStreak, deleteCoursePermanently, saveNote, getNotesForCourse, deleteNote, exportNotesMarkdown, getActivityLog } from './services/courseService'
 import { generateTranscript, getTranscript } from './services/transcriptionService'
-import { getPlaylistInfo, downloadYouTubeCourse } from './services/youtubeService'
+import { getPlaylistInfo, downloadYouTubeCourse, cancelDownload, cancelAllDownloads } from './services/youtubeService'
 
 // Suppress Chromium log noise and DevTools Autofill errors
 app.commandLine.appendSwitch('log-level', '3')
 app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication')
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
+})
 
 // Register protocol before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -232,6 +241,26 @@ app.whenReady().then(() => {
     deleteCoursePermanently(courseId)
   })
 
+  ipcMain.handle('refresh-course', async (_, courseId: string) => {
+    const course = getCourseById(courseId)
+    if (course && course.root_path) {
+      const updatedCourse = await scanCourseFolder(course.root_path)
+      // Merge with existing ID to avoid duplicate course
+      updatedCourse.id = courseId
+      saveCourse(updatedCourse)
+      
+      // Broadcast the update to all windows so the UI refreshes
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('course-updated', courseId)
+        }
+      })
+      
+      return updatedCourse
+    }
+    return null
+  })
+
   // Notes IPC
   ipcMain.handle('save-note', async (_, videoId: string, timestamp: number, content: string) => {
     saveNote(videoId, timestamp, content)
@@ -289,10 +318,35 @@ app.whenReady().then(() => {
     return getPlaylistInfo(url)
   })
 
+  ipcMain.handle('cancel-download', async (_, videoId: string) => {
+    cancelDownload(videoId)
+  })
+
+  ipcMain.handle('cancel-all-downloads', async () => {
+    cancelAllDownloads()
+  })
+
   ipcMain.handle('download-youtube-course', async (event, items: any[], targetFolder: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    return downloadYouTubeCourse(win, items, targetFolder)
+    await downloadYouTubeCourse(win, items, targetFolder)
+    
+    // After download is complete, rescan the folder and update/save the course
+    try {
+      const course = await scanCourseFolder(targetFolder)
+      saveCourse(course)
+      
+      // Broadcast the update to all windows so the UI refreshes
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('course-updated', course.id)
+        }
+      })
+      return course
+    } catch (e) {
+      console.error('Failed to rescan folder after download:', e)
+      return null
+    }
   })
 
   // Default open or close DevTools by F12 in development

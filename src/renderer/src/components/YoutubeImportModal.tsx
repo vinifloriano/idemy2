@@ -55,13 +55,24 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
     setError(null)
     try {
       await window.api.downloadYoutubeCourse(info.items, targetFolder)
-      // Once all done, we could wait a bit or auto-close
-      setTimeout(() => {
-        onImportComplete()
-        onClose()
-      }, 2000)
+      
+      // Check if any item failed in the progress map
+      const currentProgressValues = Object.values(progressMap)
+      const hasErrors = currentProgressValues.some(p => p.status === 'error')
+      
+      if (!hasErrors) {
+        // Only auto-close if everything succeeded
+        setTimeout(() => {
+          onImportComplete()
+          onClose()
+        }, 2000)
+      } else {
+        // If there were errors, allow the user to see them and reset downloading state
+        setIsDownloading(false)
+        setError('Some items failed to download. Please check the list below.')
+      }
     } catch (err: any) {
-      setError(err.message || 'Download failed')
+      setError(err.message || 'Download process encountered a critical error')
       setIsDownloading(false)
     }
   }
@@ -166,24 +177,35 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
 
                   <div className="space-y-3">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Download Queue</span>
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                       {info.items.map((item: any) => {
                         const progress = progressMap[item.id]
                         return (
-                          <div key={item.id} className="p-3 rounded-xl bg-surface-900/50 border border-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-3 min-w-0">
-                              {progress?.status === 'completed' ? (
-                                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                              ) : progress?.status === 'downloading' ? (
-                                <Loader2 className="w-4 h-4 text-brand-400 animate-spin shrink-0" />
-                              ) : (
-                                <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />
-                              )}
-                              <span className="text-xs text-slate-300 truncate font-medium">{item.title}</span>
+                          <div key={item.id} className="p-3 rounded-xl bg-surface-900/50 border border-white/5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {progress?.status === 'completed' ? (
+                                  <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                                ) : progress?.status === 'downloading' ? (
+                                  <Loader2 className="w-4 h-4 text-brand-400 animate-spin shrink-0" />
+                                ) : progress?.status === 'error' ? (
+                                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />
+                                )}
+                                <span className="text-xs text-slate-300 truncate font-medium">{item.title}</span>
+                              </div>
+                              <span className="text-[10px] font-bold font-mono text-slate-500 ml-4 shrink-0">
+                                {progress?.status === 'completed' ? 'DONE' : 
+                                 progress?.status === 'error' ? 'FAILED' :
+                                 progress ? `${Math.round(progress.percent)}%` : 'WAITING'}
+                              </span>
                             </div>
-                            <span className="text-[10px] font-bold font-mono text-slate-500 ml-4">
-                              {progress?.status === 'completed' ? 'DONE' : progress ? `${Math.round(progress.percent)}%` : 'WAITING'}
-                            </span>
+                            {progress?.status === 'error' && (
+                              <div className="text-[10px] text-red-400 font-medium bg-red-500/5 p-2 rounded-lg border border-red-500/10">
+                                {progress.error}
+                              </div>
+                            )}
                           </div>
                         )
                       })}

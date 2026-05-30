@@ -24,6 +24,9 @@ const api = {
   getNotes: (courseId: string) => ipcRenderer.invoke('get-notes', courseId),
   deleteNote: (noteId: string) => ipcRenderer.invoke('delete-note', noteId),
   exportNotes: (courseId: string) => ipcRenderer.invoke('export-notes', courseId),
+  refreshCourse: (courseId: string) => ipcRenderer.invoke('refresh-course', courseId),
+  cancelDownload: (videoId: string) => ipcRenderer.invoke('cancel-download', videoId),
+  cancelAllDownloads: () => ipcRenderer.invoke('cancel-all-downloads'),
   showConfirm: (message: string) => ipcRenderer.invoke('show-confirm', message),
   generateTranscript: (videoId: string, videoPath: string) =>
     ipcRenderer.invoke('generate-transcript', videoId, videoPath),
