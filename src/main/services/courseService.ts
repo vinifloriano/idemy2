@@ -4,60 +4,86 @@ import { Course } from '../../shared/types'
 export function saveCourse(course: Course): void {
   const db = getDatabase()
   
+  // 1. Identify course ID (preserve existing or use new)
   const existingCourse = db.prepare('SELECT id FROM courses WHERE root_path = ?').get(course.root_path) as any
-  const finalId = existingCourse ? existingCourse.id : course.id
+  const courseId = existingCourse ? existingCourse.id : course.id
 
-  const insertCourse = db.prepare(`
-    INSERT INTO courses (id, title, root_path, created_at, last_accessed, is_hidden)
-    VALUES (?, ?, ?, ?, ?, 0)
-    ON CONFLICT(id) DO UPDATE SET 
-      title = excluded.title,
-      is_hidden = 0
-    ON CONFLICT(root_path) DO UPDATE SET
-      title = excluded.title,
-      is_hidden = 0
-  `)
+  const transaction = db.transaction((scannedCourse: Course) => {
+    // 2. Upsert Course
+    db.prepare(`
+      INSERT INTO courses (id, title, root_path, created_at, last_accessed, is_hidden)
+      VALUES (?, ?, ?, ?, ?, 0)
+      ON CONFLICT(id) DO UPDATE SET 
+        title = excluded.title,
+        is_hidden = 0
+    `).run(courseId, scannedCourse.title, scannedCourse.root_path, scannedCourse.created_at, scannedCourse.last_accessed)
 
-  const insertSection = db.prepare(`
-    INSERT INTO sections (id, course_id, title, order_index)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET 
-      title = excluded.title,
-      order_index = excluded.order_index
-  `)
+    // Collect all scanned paths and section titles to handle deletions later
+    const scannedFilePaths = new Set<string>()
+    const scannedSectionTitles = new Set<string>()
 
-  const insertVideo = db.prepare(`
-    INSERT INTO videos (id, section_id, title, file_path, order_index)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET 
-      title = excluded.title,
-      file_path = excluded.file_path,
-      order_index = excluded.order_index
-    ON CONFLICT(file_path) DO UPDATE SET
-      title = excluded.title,
-      section_id = excluded.section_id,
-      order_index = excluded.order_index
-  `)
-
-  const transaction = db.transaction((courseData: Course, courseId: string) => {
-    insertCourse.run(courseId, courseData.title, courseData.root_path, courseData.created_at, courseData.last_accessed)
-    
-    courseData.sections.forEach((section) => {
+    scannedCourse.sections.forEach((section) => {
+      scannedSectionTitles.add(section.title)
+      
+      // 3. Upsert Section
       const existingSection = db.prepare('SELECT id FROM sections WHERE course_id = ? AND title = ?').get(courseId, section.title) as any
       const sectionId = existingSection ? existingSection.id : section.id
 
-      insertSection.run(sectionId, courseId, section.title, section.order_index)
-      
+      db.prepare(`
+        INSERT INTO sections (id, course_id, title, order_index)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET 
+          title = excluded.title,
+          order_index = excluded.order_index
+      `).run(sectionId, courseId, section.title, section.order_index)
+
       section.videos.forEach((video) => {
+        scannedFilePaths.add(video.file_path)
+
+        // 4. Upsert Video
         const existingVideo = db.prepare('SELECT id FROM videos WHERE file_path = ?').get(video.file_path) as any
         const videoId = existingVideo ? existingVideo.id : video.id
-        
-        insertVideo.run(videoId, sectionId, video.title, video.file_path, video.order_index)
+
+        db.prepare(`
+          INSERT INTO videos (id, section_id, title, file_path, order_index)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET 
+            title = excluded.title,
+            section_id = excluded.section_id,
+            order_index = excluded.order_index
+          ON CONFLICT(file_path) DO UPDATE SET
+            title = excluded.title,
+            section_id = excluded.section_id,
+            order_index = excluded.order_index
+        `).run(videoId, sectionId, video.title, video.file_path, video.order_index)
       })
+    })
+
+    // 5. Cleanup: Remove videos that no longer exist on disk
+    const allDbVideos = db.prepare(`
+      SELECT v.id, v.file_path FROM videos v 
+      JOIN sections s ON v.section_id = s.id 
+      WHERE s.course_id = ?
+    `).all(courseId) as any[]
+
+    allDbVideos.forEach(v => {
+      if (!scannedFilePaths.has(v.file_path)) {
+        db.prepare('DELETE FROM videos WHERE id = ?').run(v.id)
+      }
+    })
+
+    // 6. Cleanup: Remove sections that are now empty (due to video deletion) or were removed
+    const allDbSections = db.prepare('SELECT id, title FROM sections WHERE course_id = ?').all(courseId) as any[]
+    
+    allDbSections.forEach(s => {
+      const videoCount = db.prepare('SELECT COUNT(*) as count FROM videos WHERE section_id = ?').get(s.id) as any
+      if (!scannedSectionTitles.has(s.title) || videoCount.count === 0) {
+        db.prepare('DELETE FROM sections WHERE id = ?').run(s.id)
+      }
     })
   })
 
-  transaction(course, finalId)
+  transaction(course)
 }
 
 export function getAllCourses(): Course[] {
