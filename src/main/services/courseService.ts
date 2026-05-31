@@ -90,7 +90,7 @@ export function getAllCourses(): Course[] {
   const db = getDatabase()
   const rows = db.prepare(`
     SELECT c.*, 
-      (SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id AND v.is_completed = 1) * 100.0 / 
+        (SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id AND v.is_completed = 1) * 100.0 / 
       NULLIF((SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id), 0) as progress,
       (SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id AND v.progress > 0 AND v.is_completed = 0) as in_progress_count
     FROM courses c
@@ -165,6 +165,11 @@ export function updateVideoProgress(videoId: string, progress: number, isComplet
   }
 
   return courseId
+}
+
+export function updateVideoDuration(videoId: string, duration: number): void {
+  const db = getDatabase()
+  db.prepare('UPDATE videos SET duration = ? WHERE id = ?').run(duration, videoId)
 }
 
 export function renameCourse(courseId: string, newTitle: string): void {

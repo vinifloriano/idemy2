@@ -200,13 +200,20 @@ app.whenReady().then(() => {
   ipcMain.handle('update-video-progress', async (_, videoId: string, progress: number, isCompleted: boolean) => {
     const courseId = updateVideoProgress(videoId, progress, isCompleted)
     try {
-      if (courseId) {
+      // Only broadcast update for completion events to avoid high-frequency UI flickering
+      if (courseId && isCompleted) {
         BrowserWindow.getAllWindows().forEach(w => w.webContents.send('course-updated', courseId))
       }
     } catch (e) {
       console.error('Failed to broadcast course-updated', e)
     }
     return courseId
+  })
+
+  ipcMain.handle('update-video-duration', async (_, videoId: string, duration: number) => {
+    import('./services/courseService').then(service => {
+      service.updateVideoDuration(videoId, duration)
+    })
   })
 
   ipcMain.handle('rename-course', async (_, courseId: string, newTitle: string) => {

@@ -136,6 +136,19 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
       if (isCompleted && !activeVideo.is_completed) loadCourse()
     }
   }
+  const handleDuration = async (duration: number) => {
+    if (activeVideo && activeVideo.duration === 0) {
+      await window.api.updateVideoDuration(activeVideo.id, duration)
+      setActiveVideo({ ...activeVideo, duration })
+      if (course) {
+        const updatedSections = course.sections.map(section => ({
+          ...section,
+          videos: section.videos.map(video => (video.id === activeVideo.id ? { ...video, duration } : video))
+        }))
+        setCourse({ ...course, sections: updatedSections })
+      }
+    }
+  }
 
   const handleSaveTitle = async () => {
     if (!course) return
@@ -246,7 +259,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
              <div className="w-full bg-black shrink-0 lg:flex-1 flex items-center justify-center">
                {activeVideo ? (
                  <div className="w-full h-full">
-                    <VideoPlayer video={activeVideo} onProgress={handleProgress} onEnded={handleVideoEnded} />
+                    <VideoPlayer video={activeVideo} onProgress={handleProgress} onDuration={handleDuration} onEnded={handleVideoEnded} />
                  </div>
                ) : (
                  <div className="w-full h-[300px] md:h-[450px] lg:h-full flex flex-col items-center justify-center text-slate-500 bg-surface-900/40 backdrop-blur-sm">

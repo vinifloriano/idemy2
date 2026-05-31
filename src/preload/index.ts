@@ -8,6 +8,8 @@ const api = {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   updateVideoProgress: (videoId: string, progress: number, isCompleted: boolean) =>
     ipcRenderer.invoke('update-video-progress', videoId, progress, isCompleted),
+  updateVideoDuration: (videoId: string, duration: number) =>
+    ipcRenderer.invoke('update-video-duration', videoId, duration),
   renameCourse: (courseId: string, newTitle: string) =>
     ipcRenderer.invoke('rename-course', courseId, newTitle),
   updateCourseIcon: (courseId: string, icon: string) =>
