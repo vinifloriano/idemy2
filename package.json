@@ -28,6 +28,32 @@
     "url": "https://github.com/vinifloriano/idemy2/issues"
   },
   "homepage": "https://github.com/vinifloriano/idemy2#readme",
+  "build": {
+    "appId": "com.idemy.app",
+    "productName": "Idemy",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.education",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "resources/icon.png",
+      "target": [
+        "AppImage"
+      ]
+    }
+  },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",

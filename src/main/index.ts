@@ -27,20 +27,21 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow(): void {
-  // Determine icon: prefer repo `resources/icon.ico` or `resources/icon.png`, else use SVG data URL
+  // Determine icon: prefer the newly styled SVG for macOS consistency, then PNG/ICO
   let windowIcon: any = undefined
   try {
-    const icoPath = join(__dirname, '../../resources/icon.ico')
-    const pngPath = join(__dirname, '../../resources/icon.png')
     const svgPath = join(__dirname, '../renderer/favicon.svg')
-    if (fs.existsSync(icoPath)) {
-      windowIcon = nativeImage.createFromPath(icoPath)
-    } else if (fs.existsSync(pngPath)) {
-      windowIcon = nativeImage.createFromPath(pngPath)
-    } else if (fs.existsSync(svgPath)) {
+    const pngPath = join(__dirname, '../../resources/icon.png')
+    const icoPath = join(__dirname, '../../resources/icon.ico')
+    
+    if (fs.existsSync(svgPath)) {
       const svg = fs.readFileSync(svgPath, 'utf8')
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
       windowIcon = nativeImage.createFromDataURL(dataUrl)
+    } else if (fs.existsSync(pngPath)) {
+      windowIcon = nativeImage.createFromPath(pngPath)
+    } else if (fs.existsSync(icoPath)) {
+      windowIcon = nativeImage.createFromPath(icoPath)
     }
   } catch (e) {
     console.warn('Failed to load app icon:', e)
@@ -158,16 +159,20 @@ app.whenReady().then(() => {
   // Ensure macOS dock icon uses the same icon if available
   if (process.platform === 'darwin') {
     try {
-      const icoPath = join(__dirname, '../../resources/icon.ico')
-      const pngPath = join(__dirname, '../../resources/icon.png')
       const svgPath = join(__dirname, '../renderer/favicon.svg')
+      const pngPath = join(__dirname, '../../resources/icon.png')
+      const icoPath = join(__dirname, '../../resources/icon.ico')
       let dockImg: any = undefined
-      if (fs.existsSync(icoPath)) dockImg = nativeImage.createFromPath(icoPath)
-      else if (fs.existsSync(pngPath)) dockImg = nativeImage.createFromPath(pngPath)
-      else if (fs.existsSync(svgPath)) {
+      
+      if (fs.existsSync(svgPath)) {
         const svg = fs.readFileSync(svgPath, 'utf8')
         dockImg = nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+      } else if (fs.existsSync(pngPath)) {
+        dockImg = nativeImage.createFromPath(pngPath)
+      } else if (fs.existsSync(icoPath)) {
+        dockImg = nativeImage.createFromPath(icoPath)
       }
+      
       if (dockImg && !dockImg.isEmpty()) app.dock.setIcon(dockImg)
     } catch (e) {
       console.warn('Failed to set dock icon', e)
