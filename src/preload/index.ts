@@ -33,9 +33,9 @@ const api = {
   generateTranscript: (videoId: string, videoPath: string) =>
     ipcRenderer.invoke('generate-transcript', videoId, videoPath),
   getTranscript: (videoId: string) => ipcRenderer.invoke('get-transcript', videoId),
-  getYoutubeInfo: (url: string) => ipcRenderer.invoke('get-youtube-info', url),
-  downloadYoutubeCourse: (items: any[], targetFolder: string) =>
-    ipcRenderer.invoke('download-youtube-course', items, targetFolder),
+  getYoutubeInfo: (url: string, browser?: string) => ipcRenderer.invoke('get-youtube-info', url, browser),
+  downloadYoutubeCourse: (items: any[], targetFolder: string, browser?: string) =>
+    ipcRenderer.invoke('download-youtube-course', items, targetFolder, browser),
   
   onCourseUpdated: (callback: (courseId: string) => void) => {
     const subscription = (_event: any, courseId: string) => callback(courseId)

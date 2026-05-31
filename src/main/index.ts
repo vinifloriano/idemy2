@@ -326,8 +326,8 @@ app.whenReady().then(() => {
   })
 
   // YouTube IPC
-  ipcMain.handle('get-youtube-info', async (_, url: string) => {
-    return getPlaylistInfo(url)
+  ipcMain.handle('get-youtube-info', async (_, url: string, browser?: string) => {
+    return getPlaylistInfo(url, browser)
   })
 
   ipcMain.handle('cancel-download', async (_, videoId: string) => {
@@ -338,10 +338,10 @@ app.whenReady().then(() => {
     cancelAllDownloads()
   })
 
-  ipcMain.handle('download-youtube-course', async (event, items: any[], targetFolder: string) => {
+  ipcMain.handle('download-youtube-course', async (event, items: any[], targetFolder: string, browser?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    await downloadYouTubeCourse(win, items, targetFolder)
+    await downloadYouTubeCourse(win, items, targetFolder, browser)
     
     // After download is complete, rescan the folder and update/save the course
     try {

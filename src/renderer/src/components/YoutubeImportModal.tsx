@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react'
-import { X, SquarePlay, Folder, Loader2, Download, CheckCircle2, AlertCircle } from 'lucide-react'
+import { X, SquarePlay, Folder, Loader2, Download, CheckCircle2, AlertCircle, Globe } from 'lucide-react'
 
 interface YoutubeImportModalProps {
   onClose: () => void
   onImportComplete: () => void
 }
 
+const BROWSERS = [
+  { id: 'chrome', label: 'Chrome' },
+  { id: 'safari', label: 'Safari' },
+  { id: 'firefox', label: 'Firefox' },
+  { id: 'edge', label: 'Edge' },
+  { id: 'brave', label: 'Brave' },
+  { id: 'opera', label: 'Opera' },
+  { id: 'vivaldi', label: 'Vivaldi' }
+]
+
 const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImportComplete }) => {
   const [url, setUrl] = useState('')
+  const [selectedBrowser, setSelectedBrowser] = useState('chrome')
   const [targetFolder, setTargetFolder] = useState('')
   const [isLoadingInfo, setIsLoadingInfo] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -30,7 +41,7 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
     setIsLoadingInfo(true)
     setError(null)
     try {
-      const data = await window.api.getYoutubeInfo(url)
+      const data = await window.api.getYoutubeInfo(url, selectedBrowser)
       setInfo(data)
     } catch (err: any) {
       setError(err.message || 'Failed to fetch YouTube info')
@@ -42,9 +53,6 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
   const selectFolder = async () => {
     const folder = await window.api.selectFolder()
     if (folder) {
-      // In this app, selectFolder returns a full course object if scanned, 
-      // but we just need the path. Let's assume selectFolder might need a path-only version
-      // or we just use the root_path from the result.
       setTargetFolder((folder as any).root_path)
     }
   }
@@ -54,20 +62,17 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
     setIsDownloading(true)
     setError(null)
     try {
-      await window.api.downloadYoutubeCourse(info.items, targetFolder)
+      await window.api.downloadYoutubeCourse(info.items, targetFolder, selectedBrowser)
       
-      // Check if any item failed in the progress map
       const currentProgressValues = Object.values(progressMap)
       const hasErrors = currentProgressValues.some(p => p.status === 'error')
       
       if (!hasErrors) {
-        // Only auto-close if everything succeeded
         setTimeout(() => {
           onImportComplete()
           onClose()
         }, 2000)
       } else {
-        // If there were errors, allow the user to see them and reset downloading state
         setIsDownloading(false)
         setError('Some items failed to download. Please check the list below.')
       }
@@ -105,32 +110,68 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
           {error && (
             <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex gap-3 items-start">
               <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-400 font-medium">{error}</p>
+              <div>
+                <p className="text-sm text-red-400 font-medium">{error}</p>
+                {error.includes('Sign in to confirm you’re not a bot') && (
+                  <p className="text-xs text-red-400/80 mt-1">
+                    Try selecting a different browser where you are logged into YouTube.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
           {!info ? (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-300 mb-2">YouTube URL</label>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="https://www.youtube.com/playlist?list=..." 
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    className="flex-1 bg-surface-900 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition-all text-white shadow-inner"
-                  />
-                  <button 
-                    onClick={fetchInfo}
-                    disabled={isLoadingInfo || !url.trim()}
-                    className="bg-white/5 hover:bg-white/10 text-white px-6 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                  >
-                    {isLoadingInfo ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Analyze'}
-                  </button>
+              <div className="p-4 rounded-2xl bg-brand-500/5 border border-brand-500/10 flex gap-4 items-start mb-2">
+                <Globe className="w-5 h-5 text-brand-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold text-brand-400">Authentication Required</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    YouTube now requires authentication for most downloads. Select a browser where you are signed in to your Google account to use its cookies.
+                  </p>
                 </div>
-                <p className="mt-3 text-xs text-slate-500">Supports single videos and full playlists. Higher quality streams will be automatically merged.</p>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-300 mb-2">Browser for Cookies</label>
+                  <select 
+                    value={selectedBrowser}
+                    onChange={(e) => setSelectedBrowser(e.target.value)}
+                    className="w-full bg-surface-900 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition-all text-white shadow-inner appearance-none cursor-pointer"
+                  >
+                    {BROWSERS.map(b => (
+                      <option key={b.id} value={b.id}>{b.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-slate-300 mb-2">YouTube URL</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="https://www.youtube.com/playlist?list=..." 
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      className="flex-1 bg-surface-900 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-500 transition-all text-white shadow-inner"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center mt-4">
+                <button 
+                  onClick={fetchInfo}
+                  disabled={isLoadingInfo || !url.trim()}
+                  className="bg-brand-500 hover:bg-brand-400 text-white px-10 py-3 rounded-xl text-sm font-bold transition-all shadow-lg shadow-brand-500/20 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isLoadingInfo ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Analyze Content'}
+                </button>
+              </div>
+
+              <p className="mt-3 text-center text-xs text-slate-500">Supports single videos and full playlists. Higher quality streams will be automatically merged.</p>
             </div>
           ) : (
             <div className="space-y-8 animate-fade-in">
@@ -141,6 +182,8 @@ const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImpo
                   <span>{info.items.length} Videos</span>
                   <div className="w-1 h-1 rounded-full bg-slate-700"></div>
                   <span className="flex items-center gap-1.5"><Download className="w-3 h-3" /> Highest Quality</span>
+                  <div className="w-1 h-1 rounded-full bg-slate-700"></div>
+                  <span className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> {selectedBrowser}</span>
                 </div>
               </div>
 

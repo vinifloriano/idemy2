@@ -72,13 +72,15 @@ export function cancelAllDownloads() {
   activeProcesses.clear()
 }
 
-export async function getPlaylistInfo(url: string) {
+export async function getPlaylistInfo(url: string, browser?: string) {
   const ytdlp = await getYtdlpInstance()
   try {
-    console.log('[YouTube Service] Fetching info for:', url)
+    console.log('[YouTube Service] Fetching info for:', url, browser ? `using cookies from ${browser}` : '')
     
     // getInfoAsync is the correct method in ytdlp-nodejs
-    const info: any = await ytdlp.getInfoAsync(url)
+    const info: any = await ytdlp.getInfoAsync(url, {
+      cookiesFromBrowser: browser
+    })
     
     // Check if it's a playlist or single video
     if (info._type === 'playlist' || Array.isArray(info.entries)) {
@@ -131,7 +133,8 @@ export async function getPlaylistInfo(url: string) {
 export async function downloadYouTubeCourse(
   window: BrowserWindow,
   items: { id: string, title: string, url: string }[],
-  targetFolder: string
+  targetFolder: string,
+  browser?: string
 ) {
   const ytdlp = await getYtdlpInstance()
   cancelAllRequested = false
@@ -174,14 +177,19 @@ export async function downloadYouTubeCourse(
         continue
       }
 
-      console.log(`[YouTube Service] Downloading: ${item.title}`)
+      console.log(`[YouTube Service] Downloading: ${item.title} ${browser ? `using cookies from ${browser}` : ''}`)
       
       const builder = ytdlp.exec(item.url)
         .addOption('format', 'bv+ba/b')
         .addOption('remuxVideo', 'mp4')
         .addOption('output', outputPath)
         .addOption('noCheckCertificates', true) // Corrected plural name
-        .on('progress', (progress) => {
+      
+      if (browser) {
+        builder.addOption('cookiesFromBrowser', browser)
+      }
+
+      builder.on('progress', (progress) => {
           if (!window.isDestroyed()) {
             window.webContents.send('youtube-download-progress', {
               videoId: item.id,
