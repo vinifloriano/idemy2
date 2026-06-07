@@ -37,6 +37,26 @@ const api = {
   downloadYoutubeCourse: (items: any[], targetFolder: string, browser?: string) =>
     ipcRenderer.invoke('download-youtube-course', items, targetFolder, browser),
   
+  // Apple Speech
+  appleSpeechCheckAvailable: () => ipcRenderer.invoke('apple-speech-check-available'),
+  appleSpeechRequestPermissions: () => ipcRenderer.invoke('apple-speech-request-permissions'),
+  appleSpeechTranscribeVideo: (videoId: string, videoPath: string) =>
+    ipcRenderer.invoke('apple-speech-transcribe-video', videoId, videoPath),
+  appleSpeechStartMic: () => ipcRenderer.invoke('apple-speech-start-mic'),
+  appleSpeechStopMic: () => ipcRenderer.invoke('apple-speech-stop-mic'),
+  appleSpeechSaveMicTranscript: (videoId: string, text: string, startTime: number, endTime: number) =>
+    ipcRenderer.invoke('apple-speech-save-mic-transcript', videoId, text, startTime, endTime),
+  onAppleSpeechProgress: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('apple-speech-progress', subscription)
+    return () => ipcRenderer.removeListener('apple-speech-progress', subscription)
+  },
+  onAppleSpeechMicResult: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('apple-speech-mic-result', subscription)
+    return () => ipcRenderer.removeListener('apple-speech-mic-result', subscription)
+  },
+
   onCourseUpdated: (callback: (courseId: string) => void) => {
     const subscription = (_event: any, courseId: string) => callback(courseId)
     ipcRenderer.on('course-updated', subscription)

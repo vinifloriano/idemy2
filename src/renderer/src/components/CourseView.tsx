@@ -3,6 +3,7 @@ import { Course, Video } from '../../../shared/types'
 import VideoPlayer from './VideoPlayer'
 import CourseSidebar from './CourseSidebar'
 import TranscriptTab from './TranscriptTab'
+import TranscribeTab from './TranscribeTab'
 import CourseNotes from './CourseNotes'
 import { ArrowLeft, LayoutGrid, Pencil, Check, RotateCcw, Trash2, Settings, X, AlertTriangle, Download, Play, PartyPopper, Trophy, RefreshCw } from 'lucide-react'
 import EmojiPicker, { EmojiStyle } from 'emoji-picker-react'
@@ -20,7 +21,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
   const [editIconValue, setEditIconValue] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [activeTab, setActiveTab] = useState<'content' | 'notes' | 'transcript'>('content')
+  const [activeTab, setActiveTab] = useState<'content' | 'notes' | 'transcript' | 'transcribe'>('content')
   const [isRescanning, setIsRescanning] = useState(false)
   const settingsRef = useRef<HTMLDivElement>(null)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
@@ -274,15 +275,18 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                 <div className="flex border-b border-white/5 sticky top-0 bg-surface-800 z-10">
                    <button onClick={() => setActiveTab('content')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'content' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Content</button>
                    <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>
+                   <button onClick={() => setActiveTab('transcribe')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'transcribe' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Transcribe</button>
                 </div>
                 <div className="flex-1">
                    {activeTab === 'content' ? (
                      <CourseSidebar course={course} activeVideoId={activeVideo?.id || null} onSelectVideo={(v) => { setActiveVideo(v); window.api.updateCourseLastVideo(courseId, v.id); setCompletionState(null); window.scrollTo({top: 0, behavior: 'smooth'}) }} />
-                   ) : (
+                   ) : activeTab === 'notes' ? (
                      <CourseNotes courseId={courseId} activeVideoId={activeVideo?.id || null} onSeek={(vId, time) => {
                        const vid = course.sections.flatMap(s => s.videos).find(v => v.id === vId)
                        if (vid) { setActiveVideo({...vid, progress: time}); setActiveTab('content'); window.scrollTo({top: 0, behavior: 'smooth'}) }
                      }} />
+                   ) : (
+                     <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} onSeek={(time) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}); setActiveTab('content'); window.scrollTo({top: 0, behavior: 'smooth'}) } }} />
                    )}
                 </div>
              </div>
@@ -294,22 +298,22 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
           <div className="flex border-b border-white/5 shrink-0">
              <button onClick={() => setActiveTab('content')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'content' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Content</button>
              <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>
+             <button onClick={() => setActiveTab('transcribe')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'transcribe' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Transcribe</button>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
              {activeTab === 'content' ? (
-               <CourseSidebar course={course} activeVideoId={activeVideo?.id || null} onSelectVideo={(v) => { setActiveVideo(v); window.api.updateCourseLastVideo(courseId, v.id); setCompletionState(null) }} />
+               <CourseSidebar course={course} activeVideoId={activeVideo?.id || null} onSelectVideo={(v: any) => { setActiveVideo(v); window.api.updateCourseLastVideo(courseId, v.id); setCompletionState(null) }} />
              ) : activeTab === 'notes' ? (
-               <CourseNotes courseId={courseId} activeVideoId={activeVideo?.id || null} onSeek={(vId, time) => {
-                 const vid = course.sections.flatMap(s => s.videos).find(v => v.id === vId)
+               <CourseNotes courseId={courseId} activeVideoId={activeVideo?.id || null} onSeek={(vId: string, time: number) => {
+                 const vid = course.sections.flatMap((s: any) => s.videos).find((v: any) => v.id === vId)
                  if (vid) { setActiveVideo({...vid, progress: time}); setActiveTab('content') }
                }} />
              ) : (
-               <TranscriptTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} onSeek={(time) => { if (activeVideo) setActiveVideo({...activeVideo, progress: time}) }} />
+               <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} onSeek={(time: number) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}); setActiveTab('content') } }} />
              )}
           </div>
         </aside>
 
-        {/* Global Overlays */}
         {completionState === 'timer' && (
            <div className="absolute inset-0 bg-black/80 z-50 flex flex-col items-center justify-center animate-fade-in backdrop-blur-sm">
              <PartyPopper className="w-24 h-24 text-yellow-400 animate-bounce mb-6" />

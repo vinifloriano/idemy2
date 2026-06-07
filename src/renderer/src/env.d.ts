@@ -28,6 +28,15 @@ declare global {
       getYoutubeInfo: (url: string) => Promise<any>
       downloadYoutubeCourse: (items: any[], targetFolder: string) => Promise<void>
       onYoutubeDownloadProgress: (cb: (progress: any) => void) => () => void
+      // Apple Speech
+      appleSpeechCheckAvailable: () => Promise<{ available: boolean; platform: string }>
+      appleSpeechRequestPermissions: () => Promise<{ micGranted: boolean; speechGranted: boolean; platform: string }>
+      appleSpeechTranscribeVideo: (videoId: string, videoPath: string) => Promise<import('../../../shared/types').TranscriptSegment[]>
+      appleSpeechStartMic: () => Promise<void>
+      appleSpeechStopMic: () => Promise<void>
+      appleSpeechSaveMicTranscript: (videoId: string, text: string, startTime: number, endTime: number) => Promise<import('../../../shared/types').TranscriptSegment>
+      onAppleSpeechProgress: (cb: (data: any) => void) => () => void
+      onAppleSpeechMicResult: (cb: (data: any) => void) => () => void
     }
   }
 }

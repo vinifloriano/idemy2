@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, protocol, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol, nativeImage, systemPreferences } from 'electron'
 import fs from 'fs'
 import path, { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -6,6 +6,7 @@ import { initDatabase } from './db/database'
 import { scanCourseFolder } from './services/scanner'
 import { getAllCourses, getCourseById, saveCourse, updateVideoProgress, renameCourse, updateCourseIcon, updateCourseLastVideo, removeCourse, resetCourseProgress, getDailyStreak, deleteCoursePermanently, saveNote, getNotesForCourse, deleteNote, exportNotesMarkdown, getActivityLog } from './services/courseService'
 import { generateTranscript, getTranscript } from './services/transcriptionService'
+import { checkAppleSpeechAvailable, transcribeVideoWithAppleSpeech, startMicTranscription, stopMicTranscription, saveMicTranscript } from './services/appleSpeechService'
 import { getPlaylistInfo, downloadYouTubeCourse, cancelDownload, cancelAllDownloads } from './services/youtubeService'
 
 // Suppress Chromium log noise and DevTools Autofill errors
@@ -323,6 +324,41 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-transcript', async (_, videoId: string) => {
     return getTranscript(videoId)
+  })
+
+  // Apple Speech IPC
+  ipcMain.handle('apple-speech-check-available', async () => {
+    return checkAppleSpeechAvailable()
+  })
+
+  ipcMain.handle('apple-speech-request-permissions', async () => {
+    if (process.platform !== 'darwin') {
+      return { micGranted: false, speechGranted: false, platform: process.platform }
+    }
+    // Request microphone permission via Electron's native API
+    const micGranted = await systemPreferences.askForMediaAccess('microphone')
+    // Request speech recognition permission via the Swift helper (triggers OS dialog)
+    const speechResult = await checkAppleSpeechAvailable()
+    return { micGranted, speechGranted: speechResult.available, platform: 'macOS' }
+  })
+
+  ipcMain.handle('apple-speech-transcribe-video', async (event, videoId: string, videoPath: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return transcribeVideoWithAppleSpeech(videoId, videoPath, win)
+  })
+
+  ipcMain.handle('apple-speech-start-mic', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    startMicTranscription(win)
+  })
+
+  ipcMain.handle('apple-speech-stop-mic', async () => {
+    stopMicTranscription()
+  })
+
+  ipcMain.handle('apple-speech-save-mic-transcript', async (_, videoId: string, text: string, startTime: number, endTime: number) => {
+    return saveMicTranscript(videoId, text, startTime, endTime)
   })
 
   // YouTube IPC

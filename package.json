@@ -39,6 +39,16 @@
       "category": "public.app-category.education",
       "target": [
         "dmg"
+      ],
+      "extendInfo": {
+        "NSSpeechRecognitionUsageDescription": "Idemy uses Speech Recognition to transcribe video and microphone audio into text.",
+        "NSMicrophoneUsageDescription": "Idemy needs microphone access for live audio transcription."
+      },
+      "extraResources": [
+        {
+          "from": "src/main/native/apple-speech-helper",
+          "to": "apple-speech-helper"
+        }
       ]
     },
     "win": {

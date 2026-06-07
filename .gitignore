@@ -6,3 +6,5 @@ out
 .env
 .env.*
 ! .env.example
+# Compiled native helpers
+src/main/native/apple-speech-helper
