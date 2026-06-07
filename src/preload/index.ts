@@ -38,14 +38,15 @@ const api = {
     ipcRenderer.invoke('download-youtube-course', items, targetFolder, browser),
   
   // Apple Speech
-  appleSpeechCheckAvailable: () => ipcRenderer.invoke('apple-speech-check-available'),
+  appleSpeechCheckAvailable: (locale?: string) => ipcRenderer.invoke('apple-speech-check-available', locale),
   appleSpeechRequestPermissions: () => ipcRenderer.invoke('apple-speech-request-permissions'),
-  appleSpeechTranscribeVideo: (videoId: string, videoPath: string) =>
-    ipcRenderer.invoke('apple-speech-transcribe-video', videoId, videoPath),
-  appleSpeechStartMic: () => ipcRenderer.invoke('apple-speech-start-mic'),
+  appleSpeechTranscribeVideo: (videoId: string, videoPath: string, locale?: string) =>
+    ipcRenderer.invoke('apple-speech-transcribe-video', videoId, videoPath, locale),
+  appleSpeechStartMic: (locale?: string) => ipcRenderer.invoke('apple-speech-start-mic', locale),
   appleSpeechStopMic: () => ipcRenderer.invoke('apple-speech-stop-mic'),
-  appleSpeechSaveMicTranscript: (videoId: string, text: string, startTime: number, endTime: number) =>
-    ipcRenderer.invoke('apple-speech-save-mic-transcript', videoId, text, startTime, endTime),
+  appleSpeechSaveMicTranscript: (videoId: string, segments: any[]) =>
+    ipcRenderer.invoke('apple-speech-save-mic-transcript', videoId, segments),
+  appleSpeechCancelVideoTranscribe: () => ipcRenderer.invoke('apple-speech-cancel-video-transcribe'),
   onAppleSpeechProgress: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('apple-speech-progress', subscription)

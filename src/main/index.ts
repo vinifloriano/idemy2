@@ -6,7 +6,7 @@ import { initDatabase } from './db/database'
 import { scanCourseFolder } from './services/scanner'
 import { getAllCourses, getCourseById, saveCourse, updateVideoProgress, renameCourse, updateCourseIcon, updateCourseLastVideo, removeCourse, resetCourseProgress, getDailyStreak, deleteCoursePermanently, saveNote, getNotesForCourse, deleteNote, exportNotesMarkdown, getActivityLog } from './services/courseService'
 import { generateTranscript, getTranscript } from './services/transcriptionService'
-import { checkAppleSpeechAvailable, transcribeVideoWithAppleSpeech, startMicTranscription, stopMicTranscription, saveMicTranscript } from './services/appleSpeechService'
+import { checkAppleSpeechAvailable, transcribeVideoWithAppleSpeech, startMicTranscription, stopMicTranscription, saveMicTranscript, cancelVideoTranscription } from './services/appleSpeechService'
 import { getPlaylistInfo, downloadYouTubeCourse, cancelDownload, cancelAllDownloads } from './services/youtubeService'
 
 // Suppress Chromium log noise and DevTools Autofill errors
@@ -327,8 +327,8 @@ app.whenReady().then(() => {
   })
 
   // Apple Speech IPC
-  ipcMain.handle('apple-speech-check-available', async () => {
-    return checkAppleSpeechAvailable()
+  ipcMain.handle('apple-speech-check-available', async (_, locale?: string) => {
+    return checkAppleSpeechAvailable(locale)
   })
 
   ipcMain.handle('apple-speech-request-permissions', async () => {
@@ -342,23 +342,27 @@ app.whenReady().then(() => {
     return { micGranted, speechGranted: speechResult.available, platform: 'macOS' }
   })
 
-  ipcMain.handle('apple-speech-transcribe-video', async (event, videoId: string, videoPath: string) => {
+  ipcMain.handle('apple-speech-transcribe-video', async (event, videoId: string, videoPath: string, locale?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    return transcribeVideoWithAppleSpeech(videoId, videoPath, win)
+    return transcribeVideoWithAppleSpeech(videoId, videoPath, win, locale)
   })
 
-  ipcMain.handle('apple-speech-start-mic', async (event) => {
+  ipcMain.handle('apple-speech-start-mic', async (event, locale?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    startMicTranscription(win)
+    startMicTranscription(win, locale)
   })
 
   ipcMain.handle('apple-speech-stop-mic', async () => {
     stopMicTranscription()
   })
 
-  ipcMain.handle('apple-speech-save-mic-transcript', async (_, videoId: string, text: string, startTime: number, endTime: number) => {
-    return saveMicTranscript(videoId, text, startTime, endTime)
+  ipcMain.handle('apple-speech-save-mic-transcript', async (_, videoId: string, segments: any[]) => {
+    return saveMicTranscript(videoId, segments)
+  })
+
+  ipcMain.handle('apple-speech-cancel-video-transcribe', async () => {
+    cancelVideoTranscription()
   })
 
   // YouTube IPC

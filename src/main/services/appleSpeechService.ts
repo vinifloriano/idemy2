@@ -3,12 +3,11 @@ import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import fs from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-// @ts-ignore
-import ffmpegPath from 'ffmpeg-static'
+import { getFfmpegPath } from './ffmpegHelper'
 import { getDatabase, uuidv4 } from '../db/database'
 import { TranscriptSegment } from '../../shared/types'
 
-ffmpeg.setFfmpegPath(ffmpegPath)
+ffmpeg.setFfmpegPath(getFfmpegPath())
 
 // Path to the compiled Swift helper binary
 function getHelperPath(): string {
@@ -29,6 +28,8 @@ function getHelperPath(): string {
 
 // Active mic transcription process
 let activeMicProcess: ChildProcess | null = null
+// Active file transcription process
+let activeFileProcess: ChildProcess | null = null
 
 function extractAudioForAppleSpeech(videoPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -44,7 +45,7 @@ function extractAudioForAppleSpeech(videoPath: string, outputPath: string): Prom
   })
 }
 
-export function checkAppleSpeechAvailable(): Promise<{ available: boolean; platform: string }> {
+export function checkAppleSpeechAvailable(locale?: string): Promise<{ available: boolean; platform: string }> {
   return new Promise((resolve) => {
     if (process.platform !== 'darwin') {
       resolve({ available: false, platform: process.platform })
@@ -53,7 +54,11 @@ export function checkAppleSpeechAvailable(): Promise<{ available: boolean; platf
 
     try {
       const helperPath = getHelperPath()
-      const child = spawn(helperPath, ['check'])
+      const args = ['check']
+      if (locale) {
+        args.push(locale)
+      }
+      const child = spawn(helperPath, args)
       let output = ''
 
       child.stdout.on('data', (data) => {
@@ -98,7 +103,8 @@ export function checkAppleSpeechAvailable(): Promise<{ available: boolean; platf
 export async function transcribeVideoWithAppleSpeech(
   videoId: string,
   videoPath: string,
-  win?: BrowserWindow | null
+  win?: BrowserWindow | null,
+  locale?: string
 ): Promise<TranscriptSegment[]> {
   const tempAudioPath = join(app.getPath('temp'), `idemy_apple_audio_${videoId}.wav`)
 
@@ -116,7 +122,7 @@ export async function transcribeVideoWithAppleSpeech(
     }
 
     const helperPath = getHelperPath()
-    const segments = await runFileTranscription(helperPath, tempAudioPath, videoId, win)
+    const segments = await runFileTranscription(helperPath, tempAudioPath, videoId, win, locale)
 
     // Step 3: Save to DB
     saveSegmentsToDb(videoId, segments)
@@ -144,10 +150,16 @@ function runFileTranscription(
   helperPath: string,
   audioPath: string,
   videoId: string,
-  win?: BrowserWindow | null
+  win?: BrowserWindow | null,
+  locale?: string
 ): Promise<TranscriptSegment[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn(helperPath, ['transcribe-file', audioPath])
+    const args = ['transcribe-file', audioPath]
+    if (locale) {
+      args.push(locale)
+    }
+    const child = spawn(helperPath, args)
+    activeFileProcess = child
     const segments: TranscriptSegment[] = []
     let buffer = ''
     // Track unique segments by start time to avoid duplicates from partial results
@@ -206,6 +218,7 @@ function runFileTranscription(
     })
 
     child.on('close', (code) => {
+      activeFileProcess = null
       // Process any remaining buffer
       if (buffer.trim()) {
         try {
@@ -255,7 +268,7 @@ function saveSegmentsToDb(videoId: string, segments: TranscriptSegment[]): void 
   transaction()
 }
 
-export function startMicTranscription(win: BrowserWindow): void {
+export function startMicTranscription(win: BrowserWindow, locale?: string): void {
   if (activeMicProcess) {
     // Kill existing mic process
     stopMicTranscription()
@@ -263,7 +276,11 @@ export function startMicTranscription(win: BrowserWindow): void {
 
   try {
     const helperPath = getHelperPath()
-    activeMicProcess = spawn(helperPath, ['transcribe-mic'])
+    const args = ['transcribe-mic']
+    if (locale) {
+      args.push(locale)
+    }
+    activeMicProcess = spawn(helperPath, args)
     let buffer = ''
 
     activeMicProcess.stdout?.on('data', (data) => {
@@ -298,12 +315,10 @@ export function startMicTranscription(win: BrowserWindow): void {
             return
           }
 
-          if (parsed.text) {
+          if (parsed.segments) {
             if (!win.isDestroyed()) {
               win.webContents.send('apple-speech-mic-result', {
-                text: parsed.text,
-                start: parsed.start,
-                end: parsed.end,
+                segments: parsed.segments,
                 isFinal: parsed.isFinal
               })
             }
@@ -316,12 +331,19 @@ export function startMicTranscription(win: BrowserWindow): void {
 
     activeMicProcess.stderr?.on('data', (data) => {
       console.error('[Apple Speech Mic stderr]:', data.toString())
+      if (!win.isDestroyed()) {
+        win.webContents.send('apple-speech-mic-result', { error: data.toString() })
+      }
     })
 
-    activeMicProcess.on('close', () => {
+    activeMicProcess.on('close', (code) => {
       activeMicProcess = null
       if (!win.isDestroyed()) {
-        win.webContents.send('apple-speech-mic-result', { done: true })
+        if (code !== null && code !== 0) {
+          win.webContents.send('apple-speech-mic-result', { error: `Speech helper exited with code ${code}`, done: true })
+        } else {
+          win.webContents.send('apple-speech-mic-result', { done: true })
+        }
       }
     })
 
@@ -357,20 +379,35 @@ export function stopMicTranscription(): void {
   }
 }
 
-export function saveMicTranscript(videoId: string, text: string, startTime: number, endTime: number): TranscriptSegment {
-  const db = getDatabase()
-  const seg: TranscriptSegment = {
-    id: uuidv4(),
-    video_id: videoId,
-    text: text.trim(),
-    start_time: startTime,
-    end_time: endTime
+export function cancelVideoTranscription(): void {
+  if (activeFileProcess) {
+    try {
+      activeFileProcess.kill('SIGTERM')
+      activeFileProcess = null
+    } catch {
+      activeFileProcess = null
+    }
   }
+}
 
-  db.prepare(`
+export function saveMicTranscript(
+  videoId: string,
+  segments: Array<{ text: string; start: number; end: number }>
+): void {
+  const db = getDatabase()
+  const insertStmt = db.prepare(`
     INSERT INTO transcripts (id, video_id, text, start_time, end_time)
     VALUES (?, ?, ?, ?, ?)
-  `).run(seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
+  `)
 
-  return seg
+  const transaction = db.transaction(() => {
+    // Clear existing transcripts for this video
+    db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId)
+
+    for (const seg of segments) {
+      insertStmt.run(uuidv4(), videoId, seg.text.trim(), seg.start, seg.end)
+    }
+  })
+
+  transaction()
 }

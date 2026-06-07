@@ -7,6 +7,7 @@ interface VideoPlayerProps {
   onProgress: (progress: number, isCompleted: boolean) => void
   onDuration?: (duration: number) => void
   onEnded?: () => void
+  externalPause?: boolean
 }
 
 const formatTime = (seconds: number) => {
@@ -16,7 +17,7 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration, onEnded }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration, onEnded, externalPause }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(false)
   const [noteContent, setNoteContent] = useState('')
@@ -34,6 +35,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
   }, [onProgress, onEnded, video])
 
   const mediaUrl = `media://${encodeURI(video.file_path)}`
+
+  useEffect(() => {
+    if (externalPause && videoRef.current && !videoRef.current.paused) {
+      videoRef.current.pause()
+    }
+  }, [externalPause])
 
   useEffect(() => {
     const el = videoRef.current

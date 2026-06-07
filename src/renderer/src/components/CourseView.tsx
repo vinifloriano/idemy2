@@ -4,8 +4,9 @@ import VideoPlayer from './VideoPlayer'
 import CourseSidebar from './CourseSidebar'
 import TranscriptTab from './TranscriptTab'
 import TranscribeTab from './TranscribeTab'
+import PomodoroTimer, { PomodoroTimerRef } from './PomodoroTimer'
 import CourseNotes from './CourseNotes'
-import { ArrowLeft, LayoutGrid, Pencil, Check, RotateCcw, Trash2, Settings, X, AlertTriangle, Download, Play, PartyPopper, Trophy, RefreshCw } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Pencil, Check, RotateCcw, Trash2, Settings, X, AlertTriangle, Download, Play, PartyPopper, Trophy, RefreshCw, Timer } from 'lucide-react'
 import EmojiPicker, { EmojiStyle } from 'emoji-picker-react'
 
 interface CourseViewProps {
@@ -25,9 +26,51 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
   const [isRescanning, setIsRescanning] = useState(false)
   const settingsRef = useRef<HTMLDivElement>(null)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const pomodoroRef = useRef<PomodoroTimerRef>(null)
 
   const [completionState, setCompletionState] = useState<'timer' | 'final' | null>(null)
   const [timerSeconds, setTimerSeconds] = useState(5)
+  const [isPomodoroBreak, setIsPomodoroBreak] = useState(false)
+
+  // Pomodoro settings state and handlers inside main settings dropdown
+  const [pomoWork, setPomoWork] = useState(25)
+  const [pomoShort, setPomoShort] = useState(5)
+  const [pomoLong, setPomoLong] = useState(15)
+  const [pomoInterval, setPomoInterval] = useState(4)
+
+  useEffect(() => {
+    if (showSettings) {
+      try {
+        const stored = localStorage.getItem('idemy-pomodoro-settings')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          setPomoWork(parsed.workDuration ?? 25)
+          setPomoShort(parsed.shortBreakDuration ?? 5)
+          setPomoLong(parsed.longBreakDuration ?? 15)
+          setPomoInterval(parsed.longBreakInterval ?? 4)
+        } else {
+          setPomoWork(25)
+          setPomoShort(5)
+          setPomoLong(15)
+          setPomoInterval(4)
+        }
+      } catch {
+        // default
+      }
+    }
+  }, [showSettings])
+
+  const handleSavePomoSettings = () => {
+    const settings = {
+      workDuration: Math.max(1, Math.min(120, pomoWork)),
+      shortBreakDuration: Math.max(1, Math.min(60, pomoShort)),
+      longBreakDuration: Math.max(1, Math.min(60, pomoLong)),
+      longBreakInterval: Math.max(1, Math.min(10, pomoInterval)),
+    }
+    localStorage.setItem('idemy-pomodoro-settings', JSON.stringify(settings))
+    pomodoroRef.current?.reloadSettings()
+    setShowSettings(false)
+  }
 
   const loadCourse = async () => {
     const data = await window.api.getCourseById(courseId)
@@ -232,10 +275,18 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
               </div>
             </div>
           </div>
-          <div className="relative" ref={settingsRef}>
+          
+          <div className="flex items-center gap-2">
+            <PomodoroTimer 
+              ref={pomodoroRef}
+              onBreakStart={() => setIsPomodoroBreak(true)}
+              onBreakEnd={() => setIsPomodoroBreak(false)}
+            />
+            <div className="w-px h-6 bg-white/10 mx-2"></div>
+            <div className="relative" ref={settingsRef}>
             <button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-lg transition-all ${showSettings ? 'bg-brand-500/20 text-brand-400 rotate-90' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}><Settings className="w-5 h-5" /></button>
             {showSettings && (
-              <div className="absolute right-0 mt-3 w-64 bg-surface-800 border border-white/10 rounded-xl shadow-modal overflow-hidden z-30 animate-fade-in origin-top-right">
+              <div className="absolute right-0 mt-3 w-72 bg-surface-800 border border-white/10 rounded-xl shadow-modal overflow-hidden z-30 animate-fade-in origin-top-right">
                 <div className="px-4 py-3 border-b border-white/5 bg-surface-900/50 flex items-center justify-between"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Course Options</span><button onClick={() => setShowSettings(false)}><X className="w-3.5 h-3.5 text-slate-500 hover:text-white" /></button></div>
                 <div className="p-1">
                   <button onClick={handleExportNotes} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-brand-500/10 hover:text-brand-300 flex items-center gap-3 rounded-lg"><Download className="w-4 h-4" /> Export All Notes</button>
@@ -246,9 +297,92 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                   <button onClick={async () => { if (await window.api.showConfirm('Archive course?')) { await window.api.removeCourse(courseId); onBack() } }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3 rounded-lg"><Trash2 className="w-4 h-4" /> Archive Course</button>
                   <div className="my-1 border-t border-white/5"></div>
                   <button onClick={async () => { if (await window.api.showConfirm('DANGER: Permanent Delete?')) { await window.api.deleteCoursePermanently(courseId); onBack() } }} className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-3 rounded-lg"><AlertTriangle className="w-4 h-4" /> Delete Permanently</button>
+                  
+                  <div className="my-1 border-t border-white/5"></div>
+                  <div className="p-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Timer className="w-3.5 h-3.5 text-brand-400" />
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pomodoro Settings</span>
+                    </div>
+                    
+                    <div className="space-y-2.5">
+                      {/* Focus Duration */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-400 font-medium">Focus Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number" min={1} max={120} value={pomoWork}
+                            onChange={(e) => setPomoWork(Number(e.target.value))}
+                            className="w-12 bg-surface-900 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white text-center font-mono focus:outline-none focus:border-brand-500"
+                          />
+                          <span className="text-[9px] text-slate-600">min</span>
+                        </div>
+                      </div>
+
+                      {/* Short Break */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-400 font-medium">Short Break</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number" min={1} max={60} value={pomoShort}
+                            onChange={(e) => setPomoShort(Number(e.target.value))}
+                            className="w-12 bg-surface-900 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white text-center font-mono focus:outline-none focus:border-brand-500"
+                          />
+                          <span className="text-[9px] text-slate-600">min</span>
+                        </div>
+                      </div>
+
+                      {/* Long Break */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-400 font-medium">Long Break</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number" min={1} max={60} value={pomoLong}
+                            onChange={(e) => setPomoLong(Number(e.target.value))}
+                            className="w-12 bg-surface-900 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white text-center font-mono focus:outline-none focus:border-brand-500"
+                          />
+                          <span className="text-[9px] text-slate-600">min</span>
+                        </div>
+                      </div>
+
+                      {/* Long Break Interval */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-400 font-medium">Long Break After</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number" min={1} max={10} value={pomoInterval}
+                            onChange={(e) => setPomoInterval(Number(e.target.value))}
+                            className="w-12 bg-surface-900 border border-white/10 rounded px-1.5 py-0.5 text-xs text-white text-center font-mono focus:outline-none focus:border-brand-500"
+                          />
+                          <span className="text-[9px] text-slate-600">cyc</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                        <button
+                          onClick={() => {
+                            setPomoWork(25)
+                            setPomoShort(5)
+                            setPomoLong(15)
+                            setPomoInterval(4)
+                          }}
+                          className="text-[10px] text-slate-500 hover:text-white font-bold flex items-center gap-1 transition-colors"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Defaults
+                        </button>
+                        <button
+                          onClick={handleSavePomoSettings}
+                          className="bg-brand-500 hover:bg-brand-400 text-white px-3 py-1 rounded text-xs font-bold transition-colors"
+                        >
+                          Save Pomodoro
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </nav>
@@ -260,7 +394,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
              <div className="w-full bg-black shrink-0 lg:flex-1 flex items-center justify-center">
                {activeVideo ? (
                  <div className="w-full h-full">
-                    <VideoPlayer video={activeVideo} onProgress={handleProgress} onDuration={handleDuration} onEnded={handleVideoEnded} />
+                    <VideoPlayer video={activeVideo} onProgress={handleProgress} onDuration={handleDuration} onEnded={handleVideoEnded} externalPause={isPomodoroBreak} />
                  </div>
                ) : (
                  <div className="w-full h-[300px] md:h-[450px] lg:h-full flex flex-col items-center justify-center text-slate-500 bg-surface-900/40 backdrop-blur-sm">
@@ -277,7 +411,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                    <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>
                    <button onClick={() => setActiveTab('transcribe')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'transcribe' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Transcribe</button>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 flex flex-col min-h-0">
                    {activeTab === 'content' ? (
                      <CourseSidebar course={course} activeVideoId={activeVideo?.id || null} onSelectVideo={(v) => { setActiveVideo(v); window.api.updateCourseLastVideo(courseId, v.id); setCompletionState(null); window.scrollTo({top: 0, behavior: 'smooth'}) }} />
                    ) : activeTab === 'notes' ? (
@@ -286,7 +420,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                        if (vid) { setActiveVideo({...vid, progress: time}); setActiveTab('content'); window.scrollTo({top: 0, behavior: 'smooth'}) }
                      }} />
                    ) : (
-                     <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} onSeek={(time) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}); setActiveTab('content'); window.scrollTo({top: 0, behavior: 'smooth'}) } }} />
+                     <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} currentTime={activeVideo?.progress || 0} onSeek={(time) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}); window.scrollTo({top: 0, behavior: 'smooth'}) } }} />
                    )}
                 </div>
              </div>
@@ -300,7 +434,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
              <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>
              <button onClick={() => setActiveTab('transcribe')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'transcribe' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Transcribe</button>
           </div>
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 flex flex-col min-h-0">
              {activeTab === 'content' ? (
                <CourseSidebar course={course} activeVideoId={activeVideo?.id || null} onSelectVideo={(v: any) => { setActiveVideo(v); window.api.updateCourseLastVideo(courseId, v.id); setCompletionState(null) }} />
              ) : activeTab === 'notes' ? (
@@ -309,7 +443,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                  if (vid) { setActiveVideo({...vid, progress: time}); setActiveTab('content') }
                }} />
              ) : (
-               <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} onSeek={(time: number) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}); setActiveTab('content') } }} />
+               <TranscribeTab videoId={activeVideo?.id || null} videoPath={activeVideo?.file_path || null} currentTime={activeVideo?.progress || 0} onSeek={(time: number) => { if (activeVideo) { setActiveVideo({...activeVideo, progress: time}) } }} />
              )}
           </div>
         </aside>

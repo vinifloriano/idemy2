@@ -27,7 +27,7 @@ const CourseNotes: React.FC<CourseNotesProps> = ({ courseId, activeVideoId, onSe
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar p-4 gap-4">
+    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 gap-4">
       {notes.length === 0 ? (
         <div className="text-center py-10 text-slate-500 text-sm">
           No notes captured yet.<br />

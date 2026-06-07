@@ -33,6 +33,63 @@ func outputProgress(_ message: String) {
     outputJSON(["progress": message])
 }
 
+// MARK: - Grouping Helper
+
+struct GroupedSegment {
+    let text: String
+    let start: Double
+    let end: Double
+}
+
+func groupSegments(_ segments: [SFTranscriptionSegment], pauseThreshold: TimeInterval = 0.8, maxDuration: TimeInterval = 12.0) -> [GroupedSegment] {
+    guard !segments.isEmpty else { return [] }
+    
+    var groups: [GroupedSegment] = []
+    var currentWords: [String] = []
+    var groupStart: Double = segments[0].timestamp
+    var groupEnd: Double = segments[0].timestamp + segments[0].duration
+    
+    for i in 0..<segments.count {
+        let segment = segments[i]
+        let word = segment.substring
+        
+        if i > 0 {
+            let previousSegment = segments[i - 1]
+            let gap = segment.timestamp - (previousSegment.timestamp + previousSegment.duration)
+            let duration = segment.timestamp - groupStart
+            
+            let endsWithSentencePunctuation = previousSegment.substring.hasSuffix(".") || 
+                                              previousSegment.substring.hasSuffix("?") || 
+                                              previousSegment.substring.hasSuffix("!")
+            
+            if gap > pauseThreshold || duration > maxDuration || endsWithSentencePunctuation {
+                if !currentWords.isEmpty {
+                    groups.append(GroupedSegment(
+                        text: currentWords.joined(separator: " "),
+                        start: groupStart,
+                        end: groupEnd
+                    ))
+                }
+                currentWords = []
+                groupStart = segment.timestamp
+            }
+        }
+        
+        currentWords.append(word)
+        groupEnd = segment.timestamp + max(segment.duration, 0.5)
+    }
+    
+    if !currentWords.isEmpty {
+        groups.append(GroupedSegment(
+            text: currentWords.joined(separator: " "),
+            start: groupStart,
+            end: groupEnd
+        ))
+    }
+    
+    return groups
+}
+
 // MARK: - Speech Recognition
 
 class SpeechTranscriber {
@@ -40,13 +97,14 @@ class SpeechTranscriber {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var audioEngine: AVAudioEngine?
 
-    init?() {
-        guard let rec = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) else {
-            outputError("Speech recognizer not available for en-US locale")
+    init?(localeIdentifier: String?) {
+        let localeId = localeIdentifier ?? Locale.current.identifier
+        guard let rec = SFSpeechRecognizer(locale: Locale(identifier: localeId)) else {
+            outputError("Speech recognizer not available for locale \(localeId)")
             return nil
         }
         guard rec.isAvailable else {
-            outputError("Speech recognizer is not available on this device")
+            outputError("Speech recognizer is not available on this device for locale \(localeId)")
             return nil
         }
         self.recognizer = rec
@@ -65,12 +123,18 @@ class SpeechTranscriber {
             exit(1)
         }
 
+        // Get total duration of the audio file
+        var duration: Double = 0
+        if let file = try? AVAudioFile(forReading: url) {
+            duration = Double(file.length) / file.fileFormat.sampleRate
+        }
+
         outputProgress("Requesting speech recognition authorization...")
 
         SFSpeechRecognizer.requestAuthorization { status in
             switch status {
             case .authorized:
-                self.performFileTranscription(url: url)
+                self.performFileTranscription(url: url, duration: duration)
             case .denied:
                 outputError("Speech recognition permission denied. Please enable in System Settings > Privacy & Security > Speech Recognition.")
                 exit(1)
@@ -87,7 +151,7 @@ class SpeechTranscriber {
         }
     }
 
-    private func performFileTranscription(url: URL) {
+    private func performFileTranscription(url: URL, duration: Double) {
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
@@ -98,23 +162,43 @@ class SpeechTranscriber {
         }
 
         outputProgress("Starting transcription...")
-
-        var lastSegmentEnd: Double = 0
+        var lastPrintedPercent = -1
+        var lastProgressTime = Date()
+        var latestResult: SFSpeechRecognitionResult?
 
         recognitionTask = recognizer.recognitionTask(with: request) { result, error in
             if let result = result {
+                latestResult = result
+                let now = Date()
                 let segments = result.bestTranscription.segments
-                for segment in segments {
-                    let start = segment.timestamp
-                    let duration = segment.duration
-                    let end = start + max(duration, 0.5)
+                let grouped = groupSegments(segments)
+                
+                for group in grouped {
                     outputSegment(
-                        text: segment.substring,
-                        start: start,
-                        end: end,
+                        text: group.text,
+                        start: group.start,
+                        end: group.end,
                         isFinal: result.isFinal
                     )
-                    lastSegmentEnd = end
+                }
+
+                // Output progress updates
+                if duration > 0 {
+                    if let lastSegment = segments.last {
+                        let lastWordTime = lastSegment.timestamp
+                        let percent = min(99, Int((lastWordTime / duration) * 100))
+                        if percent > lastPrintedPercent || now.timeIntervalSince(lastProgressTime) >= 2.0 {
+                            lastPrintedPercent = percent
+                            lastProgressTime = now
+                            outputProgress("Transcribing: \(percent)% (\(Int(lastWordTime))s / \(Int(duration))s)")
+                        }
+                    } else if now.timeIntervalSince(lastProgressTime) >= 2.0 {
+                        lastProgressTime = now
+                        outputProgress("Transcribing...")
+                    }
+                } else if now.timeIntervalSince(lastProgressTime) >= 2.0 {
+                    lastProgressTime = now
+                    outputProgress("Transcribing...")
                 }
 
                 if result.isFinal {
@@ -127,6 +211,18 @@ class SpeechTranscriber {
                 // Error code 1101 = "no speech detected", which is OK at end of file
                 let nsError = error as NSError
                 if nsError.code == 1101 || nsError.code == 1110 {
+                    if let result = latestResult {
+                        let segments = result.bestTranscription.segments
+                        let grouped = groupSegments(segments)
+                        for group in grouped {
+                            outputSegment(
+                                text: group.text,
+                                start: group.start,
+                                end: group.end,
+                                isFinal: true
+                            )
+                        }
+                    }
                     outputDone()
                     exit(0)
                 }
@@ -142,7 +238,26 @@ class SpeechTranscriber {
         SFSpeechRecognizer.requestAuthorization { status in
             switch status {
             case .authorized:
-                self.startMicTranscription()
+                // Check and request microphone permission explicitly on macOS
+                switch AVCaptureDevice.authorizationStatus(for: .audio) {
+                case .authorized:
+                    self.startMicTranscription()
+                case .notDetermined:
+                    AVCaptureDevice.requestAccess(for: .audio) { granted in
+                        if granted {
+                            self.startMicTranscription()
+                        } else {
+                            outputError("Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone.")
+                            exit(1)
+                        }
+                    }
+                case .denied, .restricted:
+                    outputError("Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone.")
+                    exit(1)
+                @unknown default:
+                    outputError("Unknown microphone permission status.")
+                    exit(1)
+                }
             case .denied:
                 outputError("Speech recognition permission denied. Please enable in System Settings > Privacy & Security > Speech Recognition.")
                 exit(1)
@@ -191,18 +306,24 @@ class SpeechTranscriber {
 
         outputProgress("Microphone transcription started. Listening...")
 
-        var sessionStart = Date()
-        
         recognitionTask = recognizer.recognitionTask(with: request) { result, error in
             if let result = result {
-                let elapsed = Date().timeIntervalSince(sessionStart)
-                let text = result.bestTranscription.formattedString
-                outputSegment(
-                    text: text,
-                    start: max(0, elapsed - 2),
-                    end: elapsed,
-                    isFinal: result.isFinal
-                )
+                let segments = result.bestTranscription.segments
+                let grouped = groupSegments(segments)
+                
+                var jsonSegments: [[String: Any]] = []
+                for group in grouped {
+                    jsonSegments.append([
+                        "text": group.text,
+                        "start": group.start,
+                        "end": group.end
+                    ])
+                }
+                
+                outputJSON([
+                    "segments": jsonSegments,
+                    "isFinal": result.isFinal
+                ])
             }
 
             if let error = error {
@@ -241,14 +362,33 @@ class SpeechTranscriber {
 
     // MARK: - Check Availability
 
-    static func checkAvailability() {
+    static func checkAvailability(localeIdentifier: String?) {
         SFSpeechRecognizer.requestAuthorization { status in
-            let available = (status == .authorized)
-            outputJSON([
-                "available": available,
-                "platform": "macOS",
-                "status": "\(status.rawValue)"
-            ])
+            guard status == .authorized else {
+                outputJSON([
+                    "available": false,
+                    "platform": "macOS",
+                    "status": "\(status.rawValue)"
+                ])
+                exit(0)
+            }
+            
+            let localeId = localeIdentifier ?? Locale.current.identifier
+            if let recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeId)) {
+                outputJSON([
+                    "available": recognizer.isAvailable,
+                    "platform": "macOS",
+                    "status": "\(status.rawValue)",
+                    "locale": localeId
+                ])
+            } else {
+                outputJSON([
+                    "available": false,
+                    "platform": "macOS",
+                    "status": "\(status.rawValue)",
+                    "error": "Locale \(localeId) not supported"
+                ])
+            }
             exit(0)
         }
     }
@@ -259,7 +399,7 @@ class SpeechTranscriber {
 let args = CommandLine.arguments
 
 guard args.count >= 2 else {
-    outputError("Usage: apple-speech-helper <command> [args]\nCommands: transcribe-file <path>, transcribe-mic, check")
+    outputError("Usage: apple-speech-helper <command> [args]\nCommands: transcribe-file <path> [locale], transcribe-mic [locale], check [locale]")
     exit(1)
 }
 
@@ -268,19 +408,22 @@ let command = args[1]
 switch command {
 case "transcribe-file":
     guard args.count >= 3 else {
-        outputError("Usage: apple-speech-helper transcribe-file <audio-file-path>")
+        outputError("Usage: apple-speech-helper transcribe-file <audio-file-path> [locale]")
         exit(1)
     }
     let filePath = args[2]
-    guard let transcriber = SpeechTranscriber() else { exit(1) }
+    let locale = args.count >= 4 ? args[3] : nil
+    guard let transcriber = SpeechTranscriber(localeIdentifier: locale) else { exit(1) }
     transcriber.transcribeFile(at: filePath)
 
 case "transcribe-mic":
-    guard let transcriber = SpeechTranscriber() else { exit(1) }
+    let locale = args.count >= 3 ? args[2] : nil
+    guard let transcriber = SpeechTranscriber(localeIdentifier: locale) else { exit(1) }
     transcriber.transcribeMic()
 
 case "check":
-    SpeechTranscriber.checkAvailability()
+    let locale = args.count >= 3 ? args[2] : nil
+    SpeechTranscriber.checkAvailability(localeIdentifier: locale)
 
 default:
     outputError("Unknown command: \(command). Use: transcribe-file, transcribe-mic, or check")

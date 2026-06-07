@@ -5,6 +5,7 @@ import { Loader2, Mic, MicOff, Play, Video, Square, RefreshCw, Save, AlertCircle
 interface TranscribeTabProps {
   videoId: string | null
   videoPath: string | null
+  currentTime?: number
   onSeek: (time: number) => void
 }
 
@@ -16,7 +17,21 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSeek }) => {
+const LANGUAGES = [
+  { code: 'en-US', name: 'English (US)' },
+  { code: 'en-GB', name: 'English (UK)' },
+  { code: 'pt-BR', name: 'Portuguese (Brazil)' },
+  { code: 'pt-PT', name: 'Portuguese (Portugal)' },
+  { code: 'es-ES', name: 'Spanish (Spain)' },
+  { code: 'es-MX', name: 'Spanish (Mexico)' },
+  { code: 'fr-FR', name: 'French (France)' },
+  { code: 'de-DE', name: 'German' },
+  { code: 'it-IT', name: 'Italian' },
+  { code: 'ja-JP', name: 'Japanese' },
+  { code: 'zh-CN', name: 'Chinese (Mandarin)' }
+]
+
+const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, currentTime, onSeek }) => {
   const [mode, setMode] = useState<Mode>('video')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [isTranscribing, setIsTranscribing] = useState(false)
@@ -24,11 +39,12 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
   const [error, setError] = useState<string | null>(null)
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [platformInfo, setPlatformInfo] = useState<string>('')
+  const [locale, setLocale] = useState<string>('en-US')
 
   // Mic state
   const [isMicActive, setIsMicActive] = useState(false)
   const [micText, setMicText] = useState('')
-  const [micSegments, setMicSegments] = useState<Array<{ text: string; time: number }>>([])
+  const [micSegments, setMicSegments] = useState<Array<{ text: string; start: number; end: number }>>([])
   const [savedMic, setSavedMic] = useState(false)
   const micStartTimeRef = useRef<number>(0)
 
@@ -74,14 +90,10 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
         setIsMicActive(false)
         return
       }
-      if (data.text) {
-        setMicText(data.text)
-        if (data.isFinal) {
-          setMicSegments(prev => [...prev, {
-            text: data.text,
-            time: Date.now() - micStartTimeRef.current
-          }])
-        }
+      if (data.segments) {
+        setMicSegments(data.segments)
+        const textLines = data.segments.map((s: any) => s.text).join('\n')
+        setMicText(textLines)
         // Auto-scroll
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -138,7 +150,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
     setError(null)
     setProgressMessage('Starting...')
     try {
-      const data = await window.api.appleSpeechTranscribeVideo(videoId, videoPath)
+      const data = await window.api.appleSpeechTranscribeVideo(videoId, videoPath, locale)
       setSegments(data)
     } catch (err: any) {
       console.error('Apple Speech transcription failed:', err)
@@ -146,6 +158,14 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
     } finally {
       setIsTranscribing(false)
       setProgressMessage(null)
+    }
+  }
+
+  const handleCancelTranscribe = async () => {
+    try {
+      await window.api.appleSpeechCancelVideoTranscribe()
+    } catch {
+      // ignore
     }
   }
 
@@ -157,7 +177,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
     micStartTimeRef.current = Date.now()
     try {
       setIsMicActive(true)
-      await window.api.appleSpeechStartMic()
+      await window.api.appleSpeechStartMic(locale)
     } catch (err: any) {
       setError(err.message || 'Failed to start microphone.')
       setIsMicActive(false)
@@ -173,15 +193,14 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
     setIsMicActive(false)
   }
 
-  const handleSaveMicTranscript = async () => {
+  const handleSaveMicNote = async () => {
     if (!videoId || !micText.trim()) return
     try {
-      await window.api.appleSpeechSaveMicTranscript(videoId, micText.trim(), 0, (Date.now() - micStartTimeRef.current) / 1000)
+      const timestamp = currentTime || 0
+      await window.api.saveNote(videoId, timestamp, micText.trim())
       setSavedMic(true)
-      // Reload to show in segments
-      await loadTranscript()
     } catch (err: any) {
-      setError(err.message || 'Failed to save transcript.')
+      setError(err.message || 'Failed to save note.')
     }
   }
 
@@ -254,9 +273,9 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
   }
 
   return (
-    <div ref={scrollRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar bg-surface-800">
-      {/* Mode Switcher */}
-      <div className="sticky top-0 z-10 bg-surface-800 border-b border-white/5 px-4 py-3">
+    <div ref={scrollRef} className="flex flex-col flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-surface-800">
+      {/* Mode Switcher & Language Selector */}
+      <div className="sticky top-0 z-10 bg-surface-800 border-b border-white/5 px-4 py-3 space-y-2">
         <div className="flex gap-1 bg-surface-900 rounded-lg p-0.5 border border-white/5">
           <button
             onClick={() => setMode('video')}
@@ -278,6 +297,34 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
           >
             <Mic className="w-3.5 h-3.5" /> Mic
           </button>
+        </div>
+
+        {/* Language Selector */}
+        <div className="flex items-center justify-between gap-3 bg-surface-900/50 border border-white/5 px-3 py-1.5 rounded-lg">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Language</span>
+          <select
+            value={locale}
+            onChange={async (e) => {
+              const val = e.target.value
+              setLocale(val)
+              setError(null)
+              try {
+                const result = await window.api.appleSpeechCheckAvailable(val)
+                if (!result.available) {
+                  setError(`The selected language (${LANGUAGES.find(l => l.code === val)?.name}) is not downloaded or supported on this Mac. Please enable it in macOS System Settings → Keyboard → Dictation.`)
+                }
+              } catch (err) {
+                // ignore
+              }
+            }}
+            className="bg-transparent text-xs font-semibold text-slate-300 hover:text-white focus:outline-none cursor-pointer pr-1"
+          >
+            {LANGUAGES.map(lang => (
+              <option key={lang.code} value={lang.code} className="bg-surface-800 text-slate-300">
+                {lang.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -343,6 +390,12 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
               <p className="text-slate-500 text-[10px] mt-3 max-w-[200px] leading-relaxed">
                 Using Apple's native Speech Recognition for high-quality transcription.
               </p>
+              <button
+                onClick={handleCancelTranscribe}
+                className="mt-6 border border-white/10 hover:border-red-500/30 hover:bg-red-500/10 text-slate-400 hover:text-red-400 px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all"
+              >
+                Cancel Transcription
+              </button>
             </div>
           )}
 
@@ -440,7 +493,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
               {/* Save button */}
               {!isMicActive && micText.trim() && (
                 <button
-                  onClick={handleSaveMicTranscript}
+                  onClick={handleSaveMicNote}
                   disabled={savedMic}
                   className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${
                     savedMic
@@ -450,11 +503,11 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, onSee
                 >
                   {savedMic ? (
                     <>
-                      <CheckCircle2 className="w-4 h-4" /> Saved to Transcript
+                      <CheckCircle2 className="w-4 h-4" /> Saved to Notes
                     </>
                   ) : (
                     <>
-                      <Save className="w-4 h-4" /> Save as Transcript
+                      <Save className="w-4 h-4" /> Save as Note
                     </>
                   )}
                 </button>

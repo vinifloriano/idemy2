@@ -2,14 +2,13 @@ import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-// @ts-ignore
-import ffmpegPath from 'ffmpeg-static'
+import { getFfmpegPath } from './ffmpegHelper'
 import { WaveFile } from 'wavefile'
 import { getDatabase, uuidv4 } from '../db/database'
 import { TranscriptSegment } from '../../shared/types'
 
 // Set ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath)
+ffmpeg.setFfmpegPath(getFfmpegPath())
 
 let transcriber: any = null
 

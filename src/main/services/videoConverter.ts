@@ -1,23 +1,13 @@
 import ffmpeg from 'fluent-ffmpeg'
 import fs from 'fs'
 import path from 'path'
-import { app } from 'electron'
-import os from 'os'
+import { getFfmpegPath } from './ffmpegHelper'
 
 let ffmpegInitialized = false
 
 // Initialize FFmpeg path
 try {
-  let ffmpegPath = ''
-  
-  const platform = os.platform()
-  const execName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  
-  if (app.isPackaged) {
-    ffmpegPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', execName)
-  } else {
-    ffmpegPath = path.join(app.getAppPath(), 'node_modules', 'ffmpeg-static', execName)
-  }
+  const ffmpegPath = getFfmpegPath()
 
   if (fs.existsSync(ffmpegPath)) {
     ffmpeg.setFfmpegPath(ffmpegPath)

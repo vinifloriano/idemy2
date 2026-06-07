@@ -22,7 +22,7 @@ const CourseSidebar: React.FC<CourseSidebarProps> = ({ course, activeVideoId, on
     setCollapsed(prev => ({ ...prev, [sectionId]: !prev[sectionId] }))
   }
   return (
-    <aside className="bg-surface-800/80 backdrop-blur border-l border-white/5 flex flex-col h-full max-h-full min-h-0 shrink-0 z-10 overflow-hidden">
+    <aside className="bg-surface-800/80 backdrop-blur border-l border-white/5 flex flex-col flex-1 min-h-0 shrink-0 z-10 overflow-hidden">
       <div className="p-5 border-b border-white/5 bg-surface-900/50 shrink-0">
         <h3 className="font-bold text-white text-xs uppercase tracking-[0.2em]">Course Content</h3>
         <div className="text-[10px] font-bold text-brand-400 mt-1 uppercase opacity-80">{course.sections.length} Sections</div>

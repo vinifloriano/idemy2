@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.idemy.apple-speech-helper</string>
+    <key>CFBundleName</key>
+    <string>apple-speech-helper</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Idemy uses Speech Recognition to transcribe video and microphone audio into text.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Idemy needs microphone access for live audio transcription.</string>
+</dict>
+</plist>

@@ -3,8 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { YtDlp, helpers } from 'ytdlp-nodejs'
 import ytpl from 'ytpl' 
-// @ts-ignore
-import ffmpegPath from 'ffmpeg-static'
+import { getFfmpegPath } from './ffmpegHelper'
 
 // Setup paths
 const binPath = path.join(app.getPath('userData'), 'bin')
@@ -43,7 +42,7 @@ async function getYtdlpInstance(): Promise<YtDlp> {
 
     ytdlpInstance = new YtDlp({
       binaryPath: finalBinaryPath,
-      ffmpegPath: ffmpegPath
+      ffmpegPath: getFfmpegPath()
     })
     
     return ytdlpInstance

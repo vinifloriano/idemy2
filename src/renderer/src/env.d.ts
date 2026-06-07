@@ -29,12 +29,13 @@ declare global {
       downloadYoutubeCourse: (items: any[], targetFolder: string) => Promise<void>
       onYoutubeDownloadProgress: (cb: (progress: any) => void) => () => void
       // Apple Speech
-      appleSpeechCheckAvailable: () => Promise<{ available: boolean; platform: string }>
+      appleSpeechCheckAvailable: (locale?: string) => Promise<{ available: boolean; platform: string }>
       appleSpeechRequestPermissions: () => Promise<{ micGranted: boolean; speechGranted: boolean; platform: string }>
-      appleSpeechTranscribeVideo: (videoId: string, videoPath: string) => Promise<import('../../../shared/types').TranscriptSegment[]>
-      appleSpeechStartMic: () => Promise<void>
+      appleSpeechTranscribeVideo: (videoId: string, videoPath: string, locale?: string) => Promise<import('../../../shared/types').TranscriptSegment[]>
+      appleSpeechStartMic: (locale?: string) => Promise<void>
       appleSpeechStopMic: () => Promise<void>
-      appleSpeechSaveMicTranscript: (videoId: string, text: string, startTime: number, endTime: number) => Promise<import('../../../shared/types').TranscriptSegment>
+      appleSpeechSaveMicTranscript: (videoId: string, segments: Array<{ text: string; start: number; end: number }>) => Promise<void>
+      appleSpeechCancelVideoTranscribe: () => Promise<void>
       onAppleSpeechProgress: (cb: (data: any) => void) => () => void
       onAppleSpeechMicResult: (cb: (data: any) => void) => () => void
     }
