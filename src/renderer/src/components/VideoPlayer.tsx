@@ -124,7 +124,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
     setCurrentCaption(null)
   }, [video.id])
 
-  const mediaUrl = `media://${encodeURI(video.file_path)}`
+  const mediaUrl = `media:///${video.file_path.replace(/\\/g, '/')}`
 
   useEffect(() => {
     if (externalPause && videoRef.current && !videoRef.current.paused) {

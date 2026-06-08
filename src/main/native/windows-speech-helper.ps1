@@ -23,23 +23,37 @@ function Output-JSON($obj) {
 
 if ($Command -eq "check") {
     try {
-        $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $Locale
-        Output-JSON @{ available = $true; platform = "Windows"; locale = $Locale }
-    } catch {
-        # Try default locale if specific one fails
-        try {
+        $installed = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
+        $match = $installed | Where-Object { $_.Culture.Name -eq $Locale -or $_.Id -eq $Locale } | Select-Object -First 1
+        
+        if ($match) {
+            Output-JSON @{ available = $true; platform = "Windows"; locale = $match.Culture.Name; id = $match.Id }
+        } else {
+            # Try default
             $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
             Output-JSON @{ available = $true; platform = "Windows"; locale = $recognizer.RecognizerInfo.Culture.Name; note = "Requested locale not found, using default" }
-        } catch {
-            Output-JSON @{ available = $false; platform = "Windows"; error = $_.Exception.Message }
         }
+    } catch {
+        Output-JSON @{ available = $false; platform = "Windows"; error = $_.Exception.Message }
     }
     exit 0
 }
 
 if ($Command -eq "transcribe-mic") {
     try {
-        $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $Locale
+        $recognizer = $null
+        try {
+            $installed = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
+            $match = $installed | Where-Object { $_.Culture.Name -eq $Locale -or $_.Id -eq $Locale } | Select-Object -First 1
+            if ($match) {
+                $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $match.Id
+            } else {
+                $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+            }
+        } catch {
+            $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+        }
+
         $recognizer.SetInputToDefaultAudioDevice()
         
         $grammar = New-Object System.Speech.Recognition.DictationGrammar
@@ -84,10 +98,6 @@ if ($Command -eq "transcribe-mic") {
 
         # Listen for STOP on stdin
         while ($true) {
-            if ([Console]::KeyAvailable) {
-                $key = [Console]::ReadKey($true)
-                # We don't really use keys, we use ReadLine for STOP command
-            }
             $line = [Console]::In.ReadLine()
             if ($line -eq "STOP") {
                 $recognizer.RecognizeAsyncStop()
@@ -110,7 +120,19 @@ if ($Command -eq "transcribe-file") {
             exit 1
         }
 
-        $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $Locale
+        $recognizer = $null
+        try {
+            $installed = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
+            $match = $installed | Where-Object { $_.Culture.Name -eq $Locale -or $_.Id -eq $Locale } | Select-Object -First 1
+            if ($match) {
+                $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $match.Id
+            } else {
+                $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+            }
+        } catch {
+            $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
+        }
+
         $recognizer.SetInputToWaveFile($path)
         
         $grammar = New-Object System.Speech.Recognition.DictationGrammar

@@ -87,11 +87,14 @@ app.whenReady().then(() => {
   protocol.registerStreamProtocol('media', (request, callback) => {
     try {
       const requestUrl = request.url
-      const url = new URL(requestUrl)
-      let filePath = decodeURI(url.pathname)
-      if (process.platform === 'win32' && filePath.startsWith('/')) {
-        filePath = filePath.slice(1)
+      // Manual parsing to avoid the URL constructor stripping characters like '#' (fragments)
+      let filePath = ''
+      if (requestUrl.startsWith('media:///')) {
+        filePath = decodeURIComponent(requestUrl.slice(9))
+      } else if (requestUrl.startsWith('media://')) {
+        filePath = decodeURIComponent(requestUrl.slice(8))
       }
+      
       const normalizedPath = path.normalize(filePath)
 
       if (!fs.existsSync(normalizedPath)) {

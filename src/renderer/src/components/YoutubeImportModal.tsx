@@ -7,6 +7,7 @@ interface YoutubeImportModalProps {
 }
 
 const BROWSERS = [
+  { id: 'none', label: 'No Cookies (Public Videos)' },
   { id: 'chrome', label: 'Chrome' },
   { id: 'safari', label: 'Safari' },
   { id: 'firefox', label: 'Firefox' },
@@ -18,7 +19,7 @@ const BROWSERS = [
 
 const YoutubeImportModal: React.FC<YoutubeImportModalProps> = ({ onClose, onImportComplete }) => {
   const [url, setUrl] = useState('')
-  const [selectedBrowser, setSelectedBrowser] = useState('chrome')
+  const [selectedBrowser, setSelectedBrowser] = useState('none')
   const [targetFolder, setTargetFolder] = useState('')
   const [isLoadingInfo, setIsLoadingInfo] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)

@@ -74,12 +74,28 @@ export function cancelAllDownloads() {
 export async function getPlaylistInfo(url: string, browser?: string) {
   const ytdlp = await getYtdlpInstance()
   try {
-    console.log('[YouTube Service] Fetching info for:', url, browser ? `using cookies from ${browser}` : '')
+    console.log('[YouTube Service] Fetching info for:', url, browser && browser !== 'none' ? `using cookies from ${browser}` : 'without cookies')
     
-    // getInfoAsync is the correct method in ytdlp-nodejs
-    const info: any = await ytdlp.getInfoAsync(url, {
-      cookiesFromBrowser: browser
-    })
+    // Using builder instead of getInfoAsync to have full control over options
+    const builder = ytdlp.exec(url)
+      .addOption('dumpJson')
+      .addOption('noCheckCertificates', true)
+      .addOption('flatPlaylist', true)
+    
+    if (browser && browser !== 'none') {
+      builder.addOption('cookiesFromBrowser', browser)
+      builder.addOption('noCookiesFromBrowserLock', true)
+    }
+
+    const { stdout } = await builder.exec()
+    
+    // Find the first '{' to avoid any prefix or warnings leaking into stdout
+    const firstBrace = stdout.indexOf('{')
+    if (firstBrace === -1) {
+      throw new Error(`Failed to find JSON in yt-dlp output: ${stdout.slice(0, 100)}...`)
+    }
+    const jsonStr = stdout.slice(firstBrace)
+    const info = JSON.parse(jsonStr)
     
     // Check if it's a playlist or single video
     if (info._type === 'playlist' || Array.isArray(info.entries)) {
@@ -89,7 +105,7 @@ export async function getPlaylistInfo(url: string, browser?: string) {
         items: (info.entries || []).map((item: any) => ({
           id: item.id,
           title: item.title,
-          url: `https://www.youtube.com/watch?v=${item.id}`,
+          url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
           duration: item.duration
         }))
       }
@@ -107,6 +123,11 @@ export async function getPlaylistInfo(url: string, browser?: string) {
     }
   } catch (error: any) {
     console.error('[YouTube Service] Error fetching YouTube info:', error)
+    
+    if (error.message.includes('DPAPI')) {
+      throw new Error('Chrome cookie decryption failed (DPAPI). This usually happens if the app is running with different permissions than Chrome. Try closing Chrome or using "No Cookies" for public videos.')
+    }
+
     // Fallback to ytpl if yt-dlp fails for metadata
     if (ytpl.validateID(url)) {
       try {
@@ -176,16 +197,19 @@ export async function downloadYouTubeCourse(
         continue
       }
 
-      console.log(`[YouTube Service] Downloading: ${item.title} ${browser ? `using cookies from ${browser}` : ''}`)
+      console.log(`[YouTube Service] Downloading: ${item.title} ${browser && browser !== 'none' ? `using cookies from ${browser}` : 'without cookies'}`)
       
       const builder = ytdlp.exec(item.url)
         .addOption('format', 'bv+ba/b')
         .addOption('remuxVideo', 'mp4')
         .addOption('output', outputPath)
-        .addOption('noCheckCertificates', true) // Corrected plural name
+        .addOption('noCheckCertificates', true)
       
-      if (browser) {
+      if (browser && browser !== 'none') {
+        // Use the browser name. Note: yt-dlp handles the locking internally 
+        // if the version is recent enough. We'll use the documented syntax.
         builder.addOption('cookiesFromBrowser', browser)
+        builder.addOption('noCookiesFromBrowserLock', true)
       }
 
       builder.on('progress', (progress) => {
