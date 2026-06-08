@@ -39,7 +39,9 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
   const [error, setError] = useState<string | null>(null)
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [platformInfo, setPlatformInfo] = useState<string>('')
-  const [locale, setLocale] = useState<string>('en-US')
+  const [locale, setLocale] = useState<string>(() => {
+    return localStorage.getItem('transcription_locale') || 'en-US'
+  })
 
   // Mic state
   const [isMicActive, setIsMicActive] = useState(false)
@@ -107,7 +109,8 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
 
   const checkAvailability = async () => {
     try {
-      const result = await window.api.appleSpeechCheckAvailable()
+      const savedLocale = localStorage.getItem('transcription_locale') || undefined
+      const result = await window.api.appleSpeechCheckAvailable(savedLocale)
       setIsAvailable(result.available)
       setPlatformInfo(result.platform)
     } catch {
@@ -153,8 +156,8 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
       const data = await window.api.appleSpeechTranscribeVideo(videoId, videoPath, locale)
       setSegments(data)
     } catch (err: any) {
-      console.error('Apple Speech transcription failed:', err)
-      setError(err.message || 'Failed to transcribe with Apple Speech.')
+      console.error('Native Speech transcription failed:', err)
+      setError(err.message || 'Failed to transcribe with Native Speech.')
     } finally {
       setIsTranscribing(false)
       setProgressMessage(null)
@@ -206,6 +209,9 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
 
   // Not available on this platform
   if (isAvailable === false) {
+    const isWindows = platformInfo === 'Windows'
+    const isMac = platformInfo === 'macOS'
+    
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10 px-4">
         <div className="w-16 h-16 rounded-2xl bg-surface-900 border border-white/5 flex items-center justify-center mb-4">
@@ -216,12 +222,14 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
           )}
         </div>
         <h3 className="text-white font-bold mb-2">
-          {platformInfo !== 'macOS' ? 'Apple Speech Not Available' : 'Permission Required'}
+          {!(isWindows || isMac) ? 'Native Speech Not Available' : 'Permission Required'}
         </h3>
         <p className="text-slate-400 text-sm max-w-[220px] leading-relaxed mb-5">
-          {platformInfo !== 'macOS'
-            ? 'This feature requires macOS with Speech Recognition support.'
-            : 'Idemy needs permission to use Speech Recognition and Microphone for transcription.'}
+          {!(isWindows || isMac)
+            ? 'This feature requires macOS or Windows with Speech Recognition support.'
+            : isMac 
+              ? 'Idemy needs permission to use Speech Recognition and Microphone for transcription.'
+              : 'Please ensure Windows Speech Recognition is enabled in your system settings.'}
         </p>
 
         {error && (
@@ -230,7 +238,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
           </div>
         )}
 
-        {platformInfo === 'macOS' && (
+        {(isWindows || isMac) && (
           <button
             onClick={handleRequestPermissions}
             disabled={isRequestingPermission}
@@ -242,7 +250,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
               </>
             ) : (
               <>
-                <Mic className="w-4 h-4" /> Grant Permission
+                <Mic className="w-4 h-4" /> {isMac ? 'Grant Permission' : 'Enable Recognition'}
               </>
             )}
           </button>
@@ -263,7 +271,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-10">
         <Loader2 className="w-6 h-6 text-brand-500 animate-spin mb-3" />
-        <p className="text-slate-500 text-xs">Checking Apple Speech availability...</p>
+        <p className="text-slate-500 text-xs">Checking Speech Recognition availability...</p>
       </div>
     )
   }
@@ -307,11 +315,17 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
             onChange={async (e) => {
               const val = e.target.value
               setLocale(val)
+              localStorage.setItem('transcription_locale', val)
               setError(null)
               try {
                 const result = await window.api.appleSpeechCheckAvailable(val)
                 if (!result.available) {
-                  setError(`The selected language (${LANGUAGES.find(l => l.code === val)?.name}) is not downloaded or supported on this Mac. Please enable it in macOS System Settings → Keyboard → Dictation.`)
+                  const langName = LANGUAGES.find(l => l.code === val)?.name || val
+                  if (platformInfo === 'Windows') {
+                    setError(`The selected language (${langName}) is not installed on this PC. Please add it in Windows Settings → Time & Language → Language & region → Add a language.`)
+                  } else {
+                    setError(`The selected language (${langName}) is not downloaded or supported on this Mac. Please enable it in macOS System Settings → Keyboard → Dictation.`)
+                  }
                 }
               } catch (err) {
                 // ignore
@@ -355,7 +369,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
               </div>
               <h3 className="text-white font-bold mb-2 text-sm">Transcribe Video</h3>
               <p className="text-slate-400 text-xs mb-5 max-w-[200px] leading-relaxed">
-                Use Apple Speech Recognition to transcribe this video's audio.
+                Use Native Speech Recognition to transcribe this video's audio.
               </p>
               <button
                 onClick={handleTranscribeVideo}
@@ -366,7 +380,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
                   <path d="M12 18.5C15.5899 18.5 18.5 15.5899 18.5 12C18.5 8.41015 15.5899 5.5 12 5.5C8.41015 5.5 5.5 8.41015 5.5 12C5.5 15.5899 8.41015 18.5 12 18.5Z" />
                   <path d="M12 2V4M12 20V22M2 12H4M20 12H22" strokeLinecap="round" />
                 </svg>
-                Transcribe with Apple Speech
+                Transcribe with Native Speech
               </button>
             </div>
           )}
@@ -388,7 +402,7 @@ const TranscribeTab: React.FC<TranscribeTabProps> = ({ videoId, videoPath, curre
                 </p>
               )}
               <p className="text-slate-500 text-[10px] mt-3 max-w-[200px] leading-relaxed">
-                Using Apple's native Speech Recognition for high-quality transcription.
+                Using native Speech Recognition for high-quality transcription.
               </p>
               <button
                 onClick={handleCancelTranscribe}

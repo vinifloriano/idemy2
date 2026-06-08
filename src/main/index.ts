@@ -6,7 +6,7 @@ import { initDatabase } from './db/database'
 import { scanCourseFolder } from './services/scanner'
 import { getAllCourses, getCourseById, saveCourse, updateVideoProgress, renameCourse, updateCourseIcon, updateCourseLastVideo, removeCourse, resetCourseProgress, getDailyStreak, deleteCoursePermanently, saveNote, getNotesForCourse, deleteNote, exportNotesMarkdown, getActivityLog } from './services/courseService'
 import { generateTranscript, getTranscript } from './services/transcriptionService'
-import { checkAppleSpeechAvailable, transcribeVideoWithAppleSpeech, startMicTranscription, stopMicTranscription, saveMicTranscript, cancelVideoTranscription } from './services/appleSpeechService'
+import * as speechService from './services/speechService'
 import { getPlaylistInfo, downloadYouTubeCourse, cancelDownload, cancelAllDownloads } from './services/youtubeService'
 
 // Suppress Chromium log noise and DevTools Autofill errors
@@ -326,43 +326,45 @@ app.whenReady().then(() => {
     return getTranscript(videoId)
   })
 
-  // Apple Speech IPC
+  // Apple Speech IPC (Now Unified for Win/Mac)
   ipcMain.handle('apple-speech-check-available', async (_, locale?: string) => {
-    return checkAppleSpeechAvailable(locale)
+    return speechService.checkSpeechAvailable(locale)
   })
 
   ipcMain.handle('apple-speech-request-permissions', async () => {
-    if (process.platform !== 'darwin') {
-      return { micGranted: false, speechGranted: false, platform: process.platform }
+    if (process.platform === 'darwin') {
+      const micGranted = await systemPreferences.askForMediaAccess('microphone')
+      const speechResult = await speechService.checkSpeechAvailable()
+      return { micGranted, speechGranted: speechResult.available, platform: 'macOS' }
+    } else if (process.platform === 'win32') {
+      // Windows usually doesn't need explicit runtime permission via systemPreferences for mic in Electron
+      // but we return true to unblock the UI.
+      return { micGranted: true, speechGranted: true, platform: 'Windows' }
     }
-    // Request microphone permission via Electron's native API
-    const micGranted = await systemPreferences.askForMediaAccess('microphone')
-    // Request speech recognition permission via the Swift helper (triggers OS dialog)
-    const speechResult = await checkAppleSpeechAvailable()
-    return { micGranted, speechGranted: speechResult.available, platform: 'macOS' }
+    return { micGranted: false, speechGranted: false, platform: process.platform }
   })
 
   ipcMain.handle('apple-speech-transcribe-video', async (event, videoId: string, videoPath: string, locale?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    return transcribeVideoWithAppleSpeech(videoId, videoPath, win, locale)
+    return speechService.transcribeVideo(videoId, videoPath, win, locale)
   })
 
   ipcMain.handle('apple-speech-start-mic', async (event, locale?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    startMicTranscription(win, locale)
+    speechService.startMicTranscription(win, locale)
   })
 
   ipcMain.handle('apple-speech-stop-mic', async () => {
-    stopMicTranscription()
+    speechService.stopMicTranscription()
   })
 
   ipcMain.handle('apple-speech-save-mic-transcript', async (_, videoId: string, segments: any[]) => {
-    return saveMicTranscript(videoId, segments)
+    return speechService.saveMicTranscript(videoId, segments)
   })
 
   ipcMain.handle('apple-speech-cancel-video-transcribe', async () => {
-    cancelVideoTranscription()
+    speechService.cancelVideoTranscription()
   })
 
   // YouTube IPC
