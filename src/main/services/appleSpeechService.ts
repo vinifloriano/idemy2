@@ -30,6 +30,52 @@ function getHelperPath(): string {
 let activeMicProcess: ChildProcess | null = null
 // Active file transcription process
 let activeFileProcess: ChildProcess | null = null
+let isFileTranscriptionCancelled = false
+
+function cleanupTempFiles(videoId: string): void {
+  const tempDir = app.getPath('temp')
+  try {
+    const files = fs.readdirSync(tempDir)
+    const prefix = `idemy_apple_audio_${videoId}`
+    for (const f of files) {
+      if (f.startsWith(prefix) && f.endsWith('.wav')) {
+        try {
+          fs.unlinkSync(join(tempDir, f))
+        } catch (err) {
+          console.error(`[Apple Speech cleanup] Failed to delete temp file ${f}:`, err)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Apple Speech cleanup] Failed to read temp directory:', err)
+  }
+}
+
+function segmentAudio(audioPath: string, outputPattern: string, segmentTimeSec: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpegPath = getFfmpegPath()
+    const args = [
+      '-i', audioPath,
+      '-f', 'segment',
+      '-segment_time', String(segmentTimeSec),
+      '-c', 'copy',
+      outputPattern
+    ]
+    const child = spawn(ffmpegPath, args)
+    
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`ffmpeg segmenting failed with code ${code}`))
+      }
+    })
+    
+    child.on('error', (err) => {
+      reject(err)
+    })
+  })
+}
 
 function extractAudioForAppleSpeech(videoPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -100,6 +146,16 @@ export function checkAppleSpeechAvailable(locale?: string): Promise<{ available:
   })
 }
 
+function getExistingSegments(videoId: string): TranscriptSegment[] {
+  try {
+    const db = getDatabase()
+    return db.prepare('SELECT id, video_id, text, start_time, end_time FROM transcripts WHERE video_id = ? ORDER BY start_time ASC').all(videoId) as TranscriptSegment[]
+  } catch (err) {
+    console.error('Failed to get existing segments:', err)
+    return []
+  }
+}
+
 export async function transcribeVideoWithAppleSpeech(
   videoId: string,
   videoPath: string,
@@ -109,6 +165,10 @@ export async function transcribeVideoWithAppleSpeech(
   const tempAudioPath = join(app.getPath('temp'), `idemy_apple_audio_${videoId}.wav`)
 
   try {
+    // Clean up any potential stale files first
+    cleanupTempFiles(videoId)
+    isFileTranscriptionCancelled = false
+
     // Step 1: Extract audio
     if (win && !win.isDestroyed()) {
       win.webContents.send('apple-speech-progress', { videoId, message: 'Extracting audio...' })
@@ -116,31 +176,95 @@ export async function transcribeVideoWithAppleSpeech(
 
     await extractAudioForAppleSpeech(videoPath, tempAudioPath)
 
-    // Step 2: Run Apple Speech transcription
+    if (isFileTranscriptionCancelled) {
+      cleanupTempFiles(videoId)
+      return getExistingSegments(videoId)
+    }
+
+    // Step 2: Segment the extracted wav file into chunks
     if (win && !win.isDestroyed()) {
-      win.webContents.send('apple-speech-progress', { videoId, message: 'Transcribing with Apple Speech...' })
+      win.webContents.send('apple-speech-progress', { videoId, message: 'Segmenting audio...' })
+    }
+
+    const tempDir = app.getPath('temp')
+    const segmentTimeSec = 120
+    const chunkPattern = join(tempDir, `idemy_apple_audio_${videoId}_%03d.wav`)
+    await segmentAudio(tempAudioPath, chunkPattern, segmentTimeSec)
+
+    if (isFileTranscriptionCancelled) {
+      cleanupTempFiles(videoId)
+      return getExistingSegments(videoId)
+    }
+
+    // Find and sort all segment files
+    const files = fs.readdirSync(tempDir)
+    const chunkPrefix = `idemy_apple_audio_${videoId}_`
+    const chunkFiles = files
+      .filter(f => f.startsWith(chunkPrefix) && f.endsWith('.wav'))
+      .sort()
+      .map(f => join(tempDir, f))
+
+    if (chunkFiles.length === 0) {
+      throw new Error('No audio segments were generated')
     }
 
     const helperPath = getHelperPath()
-    const segments = await runFileTranscription(helperPath, tempAudioPath, videoId, win, locale)
+    const allSegments: TranscriptSegment[] = []
+    const totalChunks = chunkFiles.length
+
+    for (let i = 0; i < chunkFiles.length; i++) {
+      if (isFileTranscriptionCancelled) {
+        cleanupTempFiles(videoId)
+        return getExistingSegments(videoId)
+      }
+
+      const chunkFile = chunkFiles[i]
+      const chunkOffset = i * segmentTimeSec
+
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('apple-speech-progress', {
+          videoId,
+          message: `Transcribing chunk ${i + 1} of ${totalChunks}...`
+        })
+      }
+
+      try {
+        const chunkSegments = await runFileTranscription(
+          helperPath,
+          chunkFile,
+          videoId,
+          win,
+          locale,
+          chunkOffset,
+          i,
+          totalChunks
+        )
+        allSegments.push(...chunkSegments)
+      } catch (err) {
+        if (isFileTranscriptionCancelled) {
+          cleanupTempFiles(videoId)
+          return getExistingSegments(videoId)
+        }
+        throw err
+      }
+    }
 
     // Step 3: Save to DB
-    saveSegmentsToDb(videoId, segments)
+    saveSegmentsToDb(videoId, allSegments)
 
-    // Cleanup temp file
-    if (fs.existsSync(tempAudioPath)) {
-      fs.unlinkSync(tempAudioPath)
-    }
+    // Cleanup temp files
+    cleanupTempFiles(videoId)
 
     if (win && !win.isDestroyed()) {
       win.webContents.send('apple-speech-progress', { videoId, message: 'Done', done: true })
     }
 
-    return segments
-  } catch (error) {
+    return allSegments
+  } catch (error: any) {
     // Cleanup on error
-    if (fs.existsSync(tempAudioPath)) {
-      fs.unlinkSync(tempAudioPath)
+    cleanupTempFiles(videoId)
+    if (isFileTranscriptionCancelled || error.message === 'Transcription cancelled') {
+      return getExistingSegments(videoId)
     }
     throw error
   }
@@ -151,7 +275,10 @@ function runFileTranscription(
   audioPath: string,
   videoId: string,
   win?: BrowserWindow | null,
-  locale?: string
+  locale?: string,
+  chunkOffset = 0,
+  chunkIndex = 0,
+  totalChunks = 1
 ): Promise<TranscriptSegment[]> {
   return new Promise((resolve, reject) => {
     const args = ['transcribe-file', audioPath]
@@ -183,7 +310,19 @@ function runFileTranscription(
 
           if (parsed.progress) {
             if (win && !win.isDestroyed()) {
-              win.webContents.send('apple-speech-progress', { videoId, message: parsed.progress })
+              let displayProgress = parsed.progress
+              const match = parsed.progress.match(/Transcribing:\s*(\d+)%/)
+              if (match) {
+                const chunkPercent = parseInt(match[1], 10)
+                const overallPercent = Math.round(((chunkIndex + chunkPercent / 100) / totalChunks) * 100)
+                displayProgress = `Transcribing: ${overallPercent}%`
+              } else if (parsed.progress.includes('Transcribing')) {
+                const basePercent = Math.round((chunkIndex / totalChunks) * 100)
+                displayProgress = `Transcribing: ${basePercent}%`
+              } else {
+                displayProgress = `Chunk ${chunkIndex + 1}/${totalChunks} - ${parsed.progress}`
+              }
+              win.webContents.send('apple-speech-progress', { videoId, message: displayProgress })
             }
             continue
           }
@@ -197,13 +336,15 @@ function runFileTranscription(
           }
 
           if (parsed.text && parsed.isFinal) {
-            const key = `${parsed.start.toFixed(1)}`
+            const adjustedStart = parsed.start + chunkOffset
+            const adjustedEnd = parsed.end + chunkOffset
+            const key = `${adjustedStart.toFixed(1)}`
             const seg: TranscriptSegment = {
               id: uuidv4(),
               video_id: videoId,
               text: parsed.text.trim(),
-              start_time: parsed.start,
-              end_time: parsed.end
+              start_time: adjustedStart,
+              end_time: adjustedEnd
             }
             seenSegments.set(key, seg)
           }
@@ -223,11 +364,18 @@ function runFileTranscription(
       if (buffer.trim()) {
         try {
           const parsed = JSON.parse(buffer.trim())
-          if (parsed.done || parsed.text) {
-            const finalSegments = Array.from(seenSegments.values())
-              .sort((a, b) => a.start_time - b.start_time)
-            resolve(finalSegments)
-            return
+          if (parsed.text) {
+            const adjustedStart = parsed.start + chunkOffset
+            const adjustedEnd = parsed.end + chunkOffset
+            const key = `${adjustedStart.toFixed(1)}`
+            const seg: TranscriptSegment = {
+              id: uuidv4(),
+              video_id: videoId,
+              text: parsed.text.trim(),
+              start_time: adjustedStart,
+              end_time: adjustedEnd
+            }
+            seenSegments.set(key, seg)
           }
         } catch (e) {
           // ignore
@@ -380,6 +528,7 @@ export function stopMicTranscription(): void {
 }
 
 export function cancelVideoTranscription(): void {
+  isFileTranscriptionCancelled = true
   if (activeFileProcess) {
     try {
       activeFileProcess.kill('SIGTERM')

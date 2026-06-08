@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Video } from '../../../shared/types'
-import { BookMarked } from 'lucide-react'
+import { Video, TranscriptSegment } from '../../../shared/types'
+import { BookMarked, Subtitles } from 'lucide-react'
 
 interface VideoPlayerProps {
   video: Video
@@ -23,16 +23,67 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
   const [noteContent, setNoteContent] = useState('')
   const [currentPauseTime, setCurrentPauseTime] = useState(0)
 
+  // Closed Captions state
+  const [segments, setSegments] = useState<TranscriptSegment[]>([])
+  const [captionsEnabled, setCaptionsEnabled] = useState(() => {
+    return localStorage.getItem('captions_enabled') === 'true'
+  })
+  const [currentCaption, setCurrentCaption] = useState<string | null>(null)
+
   const lastSavedRef = useRef<number>(-1)
   const onProgressRef = useRef(onProgress)
   const onEndedRef = useRef(onEnded)
   const videoRefLatest = useRef(video)
   
+  const captionsEnabledRef = useRef(captionsEnabled)
+  const segmentsRef = useRef(segments)
+
+  const updateCaptionText = (currentTime: number) => {
+    if (captionsEnabledRef.current) {
+      const match = segmentsRef.current.find(
+        (seg) => currentTime >= seg.start_time && currentTime <= seg.end_time
+      )
+      setCurrentCaption(match ? match.text : null)
+    } else {
+      setCurrentCaption(null)
+    }
+  }
+
   useEffect(() => {
     onProgressRef.current = onProgress
     onEndedRef.current = onEnded
     videoRefLatest.current = video
   }, [onProgress, onEnded, video])
+
+  useEffect(() => {
+    captionsEnabledRef.current = captionsEnabled
+    localStorage.setItem('captions_enabled', String(captionsEnabled))
+    if (videoRef.current) {
+      updateCaptionText(videoRef.current.currentTime || 0)
+    }
+  }, [captionsEnabled])
+
+  useEffect(() => {
+    segmentsRef.current = segments
+    if (videoRef.current) {
+      updateCaptionText(videoRef.current.currentTime || 0)
+    }
+  }, [segments])
+
+  // Load transcript segments for captions on video.id change
+  useEffect(() => {
+    const loadTranscript = async () => {
+      try {
+        const data = await window.api.getTranscript(video.id)
+        setSegments(data)
+      } catch (err) {
+        console.error('Failed to load transcript for captions:', err)
+        setSegments([])
+      }
+    }
+    loadTranscript()
+    setCurrentCaption(null)
+  }, [video.id])
 
   const mediaUrl = `media://${encodeURI(video.file_path)}`
 
@@ -66,6 +117,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
     }
 
     const onTimeUpdate = () => {
+      updateCaptionText(el.currentTime || 0)
+      
       if (showNoteEditor || !isInitialized) return
       
       const floored = Math.floor(el.currentTime || 0)
@@ -79,6 +132,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
     }
 
     const handleManualSeek = () => {
+      updateCaptionText(el.currentTime || 0)
       if (!isInitialized) return
       const t = Math.floor(el.currentTime || 0)
       if (t !== lastSavedRef.current) {
@@ -134,17 +188,40 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
   return (
     <div className="flex flex-col h-full bg-surface-900 relative z-10 outline-none" tabIndex={0} onKeyDown={(e) => {
       if ((e.key === 'n' || e.key === 'N') && !showNoteEditor) handleNoteOpen()
+      if ((e.key === 'c' || e.key === 'C') && !showNoteEditor) {
+        setCaptionsEnabled(prev => !prev)
+      }
     }}>
-      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 glass-panel z-20 bg-surface-800/50">
+      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 glass-panel z-20 bg-surface-800/50 video-header">
         <h2 className="text-sm font-bold text-white line-clamp-1">{video.title}</h2>
-        <button onClick={handleNoteOpen} className="flex items-center gap-2 bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500/20">
-          <BookMarked className="w-3.5 h-3.5" /> Note (N)
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setCaptionsEnabled(!captionsEnabled)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+              captionsEnabled
+                ? 'bg-brand-500 text-white border-brand-500 hover:bg-brand-400'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10'
+            }`}
+            title="Toggle Captions (C)"
+          >
+            <Subtitles className="w-3.5 h-3.5" /> CC
+          </button>
+          <button onClick={handleNoteOpen} className="flex items-center gap-2 bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500/20">
+            <BookMarked className="w-3.5 h-3.5" /> Note (N)
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 p-4 lg:p-6 bg-black flex flex-col items-center justify-center overflow-hidden relative">
-        <div className="w-full h-full max-w-6xl shadow-2xl rounded-xl overflow-hidden border border-white/5 bg-[#050505]">
+      <div className="flex-1 p-4 lg:p-6 bg-black flex flex-col items-center justify-center overflow-hidden relative video-body">
+        <div className="w-full h-full shadow-2xl rounded-xl overflow-hidden border border-white/5 bg-[#050505] video-wrapper relative">
           <video ref={videoRef} className="w-full h-full object-contain" controls autoPlay />
+          {captionsEnabled && currentCaption && (
+            <div className="absolute bottom-16 inset-x-0 flex justify-center px-4 pointer-events-none z-10 select-none">
+              <span className="bg-black/80 text-white text-sm md:text-base lg:text-lg font-medium px-4 py-2 rounded-xl text-center max-w-[85%] leading-relaxed shadow-lg backdrop-blur-[2px] border border-white/10 transition-all duration-200">
+                {currentCaption}
+              </span>
+            </div>
+          )}
         </div>
 
         {showNoteEditor && (

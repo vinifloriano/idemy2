@@ -387,15 +387,13 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
         </div>
       </nav>
 
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative bg-[#050505]">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative bg-[#050505] course-view-main">
         {/* Main Content (Video and Mobile Tabs) */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden relative z-0 custom-scrollbar">
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden relative z-0 custom-scrollbar main-content-wrapper">
           <main className="flex-none lg:flex-1 flex flex-col min-h-0">
-             <div className="w-full bg-black shrink-0 lg:flex-1 flex items-center justify-center">
+             <div className="w-full bg-black shrink-0 lg:flex-1 flex flex-col video-player-container">
                {activeVideo ? (
-                 <div className="w-full h-full">
-                    <VideoPlayer video={activeVideo} onProgress={handleProgress} onDuration={handleDuration} onEnded={handleVideoEnded} externalPause={isPomodoroBreak} />
-                 </div>
+                 <VideoPlayer video={activeVideo} onProgress={handleProgress} onDuration={handleDuration} onEnded={handleVideoEnded} externalPause={isPomodoroBreak} />
                ) : (
                  <div className="w-full h-[300px] md:h-[450px] lg:h-full flex flex-col items-center justify-center text-slate-500 bg-surface-900/40 backdrop-blur-sm">
                    <Play className="w-8 h-8 text-slate-600 mb-4" />
@@ -405,7 +403,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
              </div>
 
              {/* Stacking sidebar content below video on narrow screens */}
-             <div className="lg:hidden w-full flex flex-col border-t border-white/5 bg-surface-800 shrink-0 min-h-[600px]">
+             <div className="lg:hidden w-full flex flex-col border-t border-white/5 bg-surface-800 shrink-0 min-h-[600px] mobile-sidebar">
                 <div className="flex border-b border-white/5 sticky top-0 bg-surface-800 z-10">
                    <button onClick={() => setActiveTab('content')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'content' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Content</button>
                    <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>
@@ -428,7 +426,7 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
         </div>
 
         {/* Desktop Sidebar (Only visible on lg screens) */}
-        <aside className="hidden lg:flex w-80 border-l border-white/5 flex-col bg-surface-800 shrink-0 overflow-hidden">
+        <aside className="hidden lg:flex w-80 border-l border-white/5 flex-col bg-surface-800 shrink-0 overflow-hidden desktop-sidebar">
           <div className="flex border-b border-white/5 shrink-0">
              <button onClick={() => setActiveTab('content')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'content' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Content</button>
              <button onClick={() => setActiveTab('notes')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors ${activeTab === 'notes' ? 'text-brand-400 bg-brand-500/5' : 'text-slate-500 hover:text-slate-300'}`}>Notes</button>

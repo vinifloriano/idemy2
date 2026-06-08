@@ -41,7 +41,7 @@ struct GroupedSegment {
     let end: Double
 }
 
-func groupSegments(_ segments: [SFTranscriptionSegment], pauseThreshold: TimeInterval = 0.8, maxDuration: TimeInterval = 12.0) -> [GroupedSegment] {
+func groupSegments(_ segments: [SFTranscriptionSegment], maxDuration: Double = 15.0, maxCharacters: Int = 120, pauseThreshold: Double = 1.2) -> [GroupedSegment] {
     guard !segments.isEmpty else { return [] }
     
     var groups: [GroupedSegment] = []
@@ -57,15 +57,41 @@ func groupSegments(_ segments: [SFTranscriptionSegment], pauseThreshold: TimeInt
             let previousSegment = segments[i - 1]
             let gap = segment.timestamp - (previousSegment.timestamp + previousSegment.duration)
             let duration = segment.timestamp - groupStart
+            let currentText = currentWords.joined(separator: " ")
             
-            let endsWithSentencePunctuation = previousSegment.substring.hasSuffix(".") || 
-                                              previousSegment.substring.hasSuffix("?") || 
-                                              previousSegment.substring.hasSuffix("!")
+            // Sentence boundary detection:
+            // 1. Last word ended with a sentence-ending punctuation (., ?, !) or East Asian equivalents (。, ？, ！)
+            let previousWord = currentWords.last ?? ""
+            let hasSentencePunctuation = previousWord.hasSuffix(".") || 
+                                         previousWord.hasSuffix("?") || 
+                                         previousWord.hasSuffix("!") ||
+                                         previousWord.hasSuffix("。") ||
+                                         previousWord.hasSuffix("？") ||
+                                         previousWord.hasSuffix("！")
             
-            if gap > pauseThreshold || duration > maxDuration || endsWithSentencePunctuation {
+            // 2. Silent gap between words exceeds pauseThreshold (e.g., 1.2 seconds)
+            let isPause = gap >= pauseThreshold
+            
+            // 3. Segment duration exceeds maxDuration (e.g., 15.0 seconds)
+            let isTooLong = duration >= maxDuration
+            
+            // 4. Segment character length exceeds maxCharacters (e.g., 120 characters)
+            let isTooManyChars = (currentText.count + word.count + 1) >= maxCharacters
+            
+            // 5. Clause punctuation (like comma, colon) plus a small pause (e.g. 0.5s) or East Asian equivalents
+            let hasClausePunctuation = previousWord.hasSuffix(",") || 
+                                       previousWord.hasSuffix(";") || 
+                                       previousWord.hasSuffix(":") ||
+                                       previousWord.hasSuffix("，") ||
+                                       previousWord.hasSuffix("、") ||
+                                       previousWord.hasSuffix("；") ||
+                                       previousWord.hasSuffix("：")
+            let isClausePause = hasClausePunctuation && gap >= 0.5
+            
+            if hasSentencePunctuation || isPause || isTooLong || isTooManyChars || isClausePause {
                 if !currentWords.isEmpty {
                     groups.append(GroupedSegment(
-                        text: currentWords.joined(separator: " "),
+                        text: currentWords.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines),
                         start: groupStart,
                         end: groupEnd
                     ))
@@ -81,7 +107,7 @@ func groupSegments(_ segments: [SFTranscriptionSegment], pauseThreshold: TimeInt
     
     if !currentWords.isEmpty {
         groups.append(GroupedSegment(
-            text: currentWords.joined(separator: " "),
+            text: currentWords.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines),
             start: groupStart,
             end: groupEnd
         ))

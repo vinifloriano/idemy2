@@ -71,3 +71,66 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-brand-500;
 }
+
+/* Fullscreen mode optimizations for course view main wrapper */
+.course-view-main:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: #000000 !important;
+}
+
+.course-view-main:fullscreen .desktop-sidebar,
+.course-view-main:fullscreen .mobile-sidebar {
+  display: none !important;
+}
+
+.course-view-main:fullscreen .main-content-wrapper {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  overflow: hidden !important;
+}
+
+.course-view-main:fullscreen main {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.course-view-main:fullscreen .video-player-container {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.course-view-main:fullscreen .video-header {
+  display: none !important;
+}
+
+.course-view-main:fullscreen .video-body {
+  padding: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.course-view-main:fullscreen .video-wrapper {
+  max-width: none !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.course-view-main:fullscreen video {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}
+
