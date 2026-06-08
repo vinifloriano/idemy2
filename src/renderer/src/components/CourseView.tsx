@@ -6,7 +6,7 @@ import TranscriptTab from './TranscriptTab'
 import TranscribeTab from './TranscribeTab'
 import PomodoroTimer, { PomodoroTimerRef } from './PomodoroTimer'
 import CourseNotes from './CourseNotes'
-import { ArrowLeft, LayoutGrid, Pencil, Check, RotateCcw, Trash2, Settings, X, AlertTriangle, Download, Play, PartyPopper, Trophy, RefreshCw, Timer } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Pencil, Check, RotateCcw, Trash2, Settings, X, AlertTriangle, Download, Play, PartyPopper, Trophy, RefreshCw, Timer, Subtitles } from 'lucide-react'
 import EmojiPicker, { EmojiStyle } from 'emoji-picker-react'
 
 interface CourseViewProps {
@@ -38,6 +38,29 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
   const [pomoLong, setPomoLong] = useState(15)
   const [pomoInterval, setPomoInterval] = useState(4)
 
+  // Caption settings
+  const [captionSize, setCaptionSize] = useState(() => Number(localStorage.getItem('idemy-caption-size')) || 100)
+  const [captionOpacity, setCaptionOpacity] = useState(() => Number(localStorage.getItem('idemy-caption-opacity')) || 90)
+
+  // Auto-save Pomodoro settings
+  useEffect(() => {
+    const settings = {
+      workDuration: Math.max(1, Math.min(120, pomoWork)),
+      shortBreakDuration: Math.max(1, Math.min(60, pomoShort)),
+      longBreakDuration: Math.max(1, Math.min(60, pomoLong)),
+      longBreakInterval: Math.max(1, Math.min(10, pomoInterval)),
+    }
+    localStorage.setItem('idemy-pomodoro-settings', JSON.stringify(settings))
+    pomodoroRef.current?.reloadSettings()
+  }, [pomoWork, pomoShort, pomoLong, pomoInterval])
+
+  // Auto-save Caption settings
+  useEffect(() => {
+    localStorage.setItem('idemy-caption-size', String(captionSize))
+    localStorage.setItem('idemy-caption-opacity', String(captionOpacity))
+    window.dispatchEvent(new Event('idemy-caption-settings-changed'))
+  }, [captionSize, captionOpacity])
+
   useEffect(() => {
     if (showSettings) {
       try {
@@ -48,29 +71,12 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
           setPomoShort(parsed.shortBreakDuration ?? 5)
           setPomoLong(parsed.longBreakDuration ?? 15)
           setPomoInterval(parsed.longBreakInterval ?? 4)
-        } else {
-          setPomoWork(25)
-          setPomoShort(5)
-          setPomoLong(15)
-          setPomoInterval(4)
         }
       } catch {
         // default
       }
     }
   }, [showSettings])
-
-  const handleSavePomoSettings = () => {
-    const settings = {
-      workDuration: Math.max(1, Math.min(120, pomoWork)),
-      shortBreakDuration: Math.max(1, Math.min(60, pomoShort)),
-      longBreakDuration: Math.max(1, Math.min(60, pomoLong)),
-      longBreakInterval: Math.max(1, Math.min(10, pomoInterval)),
-    }
-    localStorage.setItem('idemy-pomodoro-settings', JSON.stringify(settings))
-    pomodoroRef.current?.reloadSettings()
-    setShowSettings(false)
-  }
 
   const loadCourse = async () => {
     const data = await window.api.getCourseById(courseId)
@@ -370,12 +376,43 @@ const CourseView: React.FC<CourseViewProps> = ({ courseId, onBack }) => {
                         >
                           <RotateCcw className="w-3 h-3" /> Defaults
                         </button>
-                        <button
-                          onClick={handleSavePomoSettings}
-                          className="bg-brand-500 hover:bg-brand-400 text-white px-3 py-1 rounded text-xs font-bold transition-colors"
-                        >
-                          Save Pomodoro
-                        </button>
+                      </div>
+                    </div>
+
+                    <div className="my-3 border-t border-white/5"></div>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Subtitles className="w-3.5 h-3.5 text-brand-400" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Caption Settings</span>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs text-slate-400 font-medium">Text Size</label>
+                            <span className="text-[10px] font-mono text-brand-400">{captionSize}%</span>
+                          </div>
+                          <input 
+                            type="range" min="50" max="200" step="10" 
+                            value={captionSize} 
+                            onChange={(e) => setCaptionSize(Number(e.target.value))}
+                            className="w-full h-1.5 bg-surface-900 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs text-slate-400 font-medium">Transparency</label>
+                            <span className="text-[10px] font-mono text-brand-400">{100 - captionOpacity}%</span>
+                          </div>
+                          <input 
+                            type="range" min="20" max="100" step="5" 
+                            value={captionOpacity} 
+                            onChange={(e) => setCaptionOpacity(Number(e.target.value))}
+                            className="w-full h-1.5 bg-surface-900 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

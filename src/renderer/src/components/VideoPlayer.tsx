@@ -17,6 +17,30 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+const wrapText = (text: string, maxChars: number = 40) => {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 > maxChars) {
+      if (currentLine.length > 0) {
+        lines.push(currentLine)
+        currentLine = word
+      } else {
+        lines.push(word)
+        currentLine = ''
+      }
+    } else {
+      currentLine = currentLine.length === 0 ? word : currentLine + ' ' + word
+    }
+  }
+  if (currentLine.length > 0) {
+    lines.push(currentLine)
+  }
+  return lines.join('\n')
+}
+
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration, onEnded, externalPause }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [showNoteEditor, setShowNoteEditor] = useState(false)
@@ -29,6 +53,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
     return localStorage.getItem('captions_enabled') === 'true'
   })
   const [currentCaption, setCurrentCaption] = useState<string | null>(null)
+  const [captionStyle, setCaptionStyle] = useState({
+    size: Number(localStorage.getItem('idemy-caption-size')) || 100,
+    opacity: Number(localStorage.getItem('idemy-caption-opacity')) || 90
+  })
 
   const lastSavedRef = useRef<number>(-1)
   const onProgressRef = useRef(onProgress)
@@ -43,11 +71,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
       const match = segmentsRef.current.find(
         (seg) => currentTime >= seg.start_time && currentTime <= seg.end_time
       )
-      setCurrentCaption(match ? match.text : null)
+      setCurrentCaption(match ? wrapText(match.text, 40) : null)
     } else {
       setCurrentCaption(null)
     }
   }
+
+  useEffect(() => {
+    const handleSettingsChange = () => {
+      setCaptionStyle({
+        size: Number(localStorage.getItem('idemy-caption-size')) || 100,
+        opacity: Number(localStorage.getItem('idemy-caption-opacity')) || 90
+      })
+    }
+    window.addEventListener('idemy-caption-settings-changed', handleSettingsChange)
+    return () => window.removeEventListener('idemy-caption-settings-changed', handleSettingsChange)
+  }, [])
 
   useEffect(() => {
     onProgressRef.current = onProgress
@@ -216,8 +255,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, onProgress, onDuration
         <div className="w-full h-full shadow-2xl rounded-xl overflow-hidden border border-white/5 bg-[#050505] video-wrapper relative">
           <video ref={videoRef} className="w-full h-full object-contain" controls autoPlay />
           {captionsEnabled && currentCaption && (
-            <div className="absolute bottom-16 inset-x-0 flex justify-center px-4 pointer-events-none z-10 select-none">
-              <span className="bg-black/80 text-white text-sm md:text-base lg:text-lg font-medium px-4 py-2 rounded-xl text-center max-w-[85%] leading-relaxed shadow-lg backdrop-blur-[2px] border border-white/10 transition-all duration-200">
+            <div className="absolute bottom-[10%] inset-x-0 flex justify-center px-4 pointer-events-none z-10 select-none">
+              <span 
+                className="text-white font-bold px-6 py-3 rounded-2xl text-center max-w-[90%] leading-tight shadow-lg border border-white/10 transition-all duration-200 whitespace-pre-wrap"
+                style={{ 
+                  fontSize: `${(captionStyle.size / 100) * 1.25}rem`,
+                  backgroundColor: `rgba(0, 0, 0, ${captionStyle.opacity / 100})`,
+                  backdropFilter: 'blur(4px)'
+                }}
+              >
                 {currentCaption}
               </span>
             </div>
