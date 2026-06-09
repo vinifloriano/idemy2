@@ -1,17 +1,71 @@
-import type DatabaseType from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import sqlite3 from 'sqlite3'
 import { v4 as uuidv4 } from 'uuid'
 
-let db: DatabaseType.Database
+export interface AsyncDatabase {
+  run(sql: string, ...params: any[]): Promise<{ lastID: number; changes: number }>;
+  get<T>(sql: string, ...params: any[]): Promise<T | undefined>;
+  all<T>(sql: string, ...params: any[]): Promise<T[]>;
+  exec(sql: string): Promise<void>;
+  close(): Promise<void>;
+}
 
-export function initDatabase(customPath?: string): void {
-  const Database = typeof require !== 'undefined' ? require('better-sqlite3') : null;
+let db: AsyncDatabase | null = null
+
+export async function initDatabase(customPath?: string): Promise<AsyncDatabase> {
+  if (db) return db
+
   const dbPath = customPath || join(app.getPath('userData'), 'idemy.db')
-  db = new Database(dbPath)
-  db.pragma('foreign_keys = ON')
 
-  db.exec(`
+  const sqliteDb = new sqlite3.Database(dbPath)
+
+  db = {
+    run(sql: string, ...params: any[]) {
+      return new Promise((resolve, reject) => {
+        sqliteDb.run(sql, params, function(err) {
+          if (err) reject(err)
+          else resolve({ lastID: this.lastID, changes: this.changes })
+        })
+      })
+    },
+    get<T>(sql: string, ...params: any[]) {
+      return new Promise((resolve, reject) => {
+        sqliteDb.get(sql, params, (err, row) => {
+          if (err) reject(err)
+          else resolve(row as T)
+        })
+      })
+    },
+    all<T>(sql: string, ...params: any[]) {
+      return new Promise((resolve, reject) => {
+        sqliteDb.all(sql, params, (err, rows) => {
+          if (err) reject(err)
+          else resolve(rows as T[])
+        })
+      })
+    },
+    exec(sql: string) {
+      return new Promise((resolve, reject) => {
+        sqliteDb.exec(sql, (err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    },
+    close() {
+      return new Promise((resolve, reject) => {
+        sqliteDb.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    }
+  }
+
+  await db.run('PRAGMA foreign_keys = ON')
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS courses (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -21,7 +75,8 @@ export function initDatabase(customPath?: string): void {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       is_hidden BOOLEAN DEFAULT 0,
-      is_completed BOOLEAN DEFAULT 0
+      is_completed BOOLEAN DEFAULT 0,
+      last_video_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sections (
@@ -69,41 +124,41 @@ export function initDatabase(customPath?: string): void {
     );
   `)
 
-  // Migration: Add is_hidden and icon if they don't exist in courses
+  // Migration: Add columns if they don't exist
   try {
-    const tableInfo = db.pragma('table_info(courses)') as any[]
-    const hasIsHidden = tableInfo.some((col) => col.name === 'is_hidden')
-    if (!hasIsHidden) {
-      db.exec('ALTER TABLE courses ADD COLUMN is_hidden BOOLEAN DEFAULT 0;')
+    const tableInfo = await db.all<any>('PRAGMA table_info(courses)')
+    const columnNames = tableInfo.map((col) => col.name)
+
+    if (!columnNames.includes('is_hidden')) {
+      await db.exec('ALTER TABLE courses ADD COLUMN is_hidden BOOLEAN DEFAULT 0;')
     }
-    const hasIcon = tableInfo.some((col) => col.name === 'icon')
-    if (!hasIcon) {
-      db.exec('ALTER TABLE courses ADD COLUMN icon TEXT;')
+    if (!columnNames.includes('icon')) {
+      await db.exec('ALTER TABLE courses ADD COLUMN icon TEXT;')
     }
-    const hasIsCompleted = tableInfo.some((col) => col.name === 'is_completed')
-    if (!hasIsCompleted) {
-      db.exec('ALTER TABLE courses ADD COLUMN is_completed BOOLEAN DEFAULT 0;')
+    if (!columnNames.includes('is_completed')) {
+      await db.exec('ALTER TABLE courses ADD COLUMN is_completed BOOLEAN DEFAULT 0;')
     }
-    const hasLastVideoId = tableInfo.some((col) => col.name === 'last_video_id')
-    if (!hasLastVideoId) {
-      db.exec('ALTER TABLE courses ADD COLUMN last_video_id TEXT;')
+    if (!columnNames.includes('last_video_id')) {
+      await db.exec('ALTER TABLE courses ADD COLUMN last_video_id TEXT;')
     }
 
-    const activityTableInfo = db.pragma('table_info(activity_log)') as any[]
-    const hasCoursesCompleted = activityTableInfo.some((col) => col.name === 'courses_completed')
-    if (!hasCoursesCompleted) {
-      db.exec('ALTER TABLE activity_log ADD COLUMN courses_completed INTEGER DEFAULT 0;')
+    const activityTableInfo = await db.all<any>('PRAGMA table_info(activity_log)')
+    const activityColumnNames = activityTableInfo.map((col) => col.name)
+    if (!activityColumnNames.includes('courses_completed')) {
+      await db.exec('ALTER TABLE activity_log ADD COLUMN courses_completed INTEGER DEFAULT 0;')
     }
   } catch (e) {
     console.error('Migration failed:', e)
   }
+
+  return db
 }
 
-export function getDatabase(): DatabaseType.Database {
+export async function getDatabase(): Promise<AsyncDatabase> {
   if (!db) {
-    initDatabase()
+    await initDatabase()
   }
-  return db
+  return db!
 }
 
 export { uuidv4 }

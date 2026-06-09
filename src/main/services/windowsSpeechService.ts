@@ -140,7 +140,7 @@ export async function transcribeVideoWithWindowsSpeech(
 
     const segments = await runFileTranscription(tempAudioPath, videoId, win, locale)
     
-    saveSegmentsToDb(videoId, segments)
+    await saveSegmentsToDb(videoId, segments)
     cleanupTempFiles(videoId)
 
     if (win && !win.isDestroyed()) {
@@ -227,20 +227,23 @@ function runFileTranscription(
   })
 }
 
-function saveSegmentsToDb(videoId: string, segments: TranscriptSegment[]): void {
-  const db = getDatabase()
-  const insertStmt = db.prepare(`
-    INSERT INTO transcripts (id, video_id, text, start_time, end_time)
-    VALUES (?, ?, ?, ?, ?)
-  `)
+async function saveSegmentsToDb(videoId: string, segments: TranscriptSegment[]): Promise<void> {
+  const db = await getDatabase()
 
-  const transaction = db.transaction(() => {
-    db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId)
+  try {
+    await db.run('BEGIN TRANSACTION')
+    await db.run('DELETE FROM transcripts WHERE video_id = ?', videoId)
     for (const seg of segments) {
-      insertStmt.run(seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
+      await db.run(`
+        INSERT INTO transcripts (id, video_id, text, start_time, end_time)
+        VALUES (?, ?, ?, ?, ?)
+      `, seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
     }
-  })
-  transaction()
+    await db.run('COMMIT')
+  } catch (e) {
+    await db.run('ROLLBACK')
+    throw e
+  }
 }
 
 export function startWindowsMicTranscription(win: BrowserWindow, locale?: string): void {
