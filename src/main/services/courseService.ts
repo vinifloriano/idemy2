@@ -1,50 +1,53 @@
 import { getDatabase, uuidv4 } from '../db/database'
 import { Course } from '../../shared/types'
 
-export function saveCourse(course: Course): void {
-  const db = getDatabase()
+export async function saveCourse(course: Course): Promise<void> {
+  const db = await getDatabase()
   
   // 1. Identify course ID (preserve existing or use new)
-  const existingCourse = db.prepare('SELECT id FROM courses WHERE root_path = ?').get(course.root_path) as any
+  const existingCourse = await db.get('SELECT id FROM courses WHERE root_path = ?', course.root_path) as any
   const courseId = existingCourse ? existingCourse.id : course.id
 
-  const transaction = db.transaction((scannedCourse: Course) => {
+  // Manual transaction
+  try {
+    await db.run('BEGIN TRANSACTION')
+
     // 2. Upsert Course
-    db.prepare(`
+    await db.run(`
       INSERT INTO courses (id, title, root_path, created_at, last_accessed, is_hidden)
       VALUES (?, ?, ?, ?, ?, 0)
       ON CONFLICT(id) DO UPDATE SET 
         title = excluded.title,
         is_hidden = 0
-    `).run(courseId, scannedCourse.title, scannedCourse.root_path, scannedCourse.created_at, scannedCourse.last_accessed)
+    `, courseId, course.title, course.root_path, course.created_at, course.last_accessed)
 
     // Collect all scanned paths and section titles to handle deletions later
     const scannedFilePaths = new Set<string>()
     const scannedSectionTitles = new Set<string>()
 
-    scannedCourse.sections.forEach((section) => {
+    for (const section of course.sections) {
       scannedSectionTitles.add(section.title)
       
       // 3. Upsert Section
-      const existingSection = db.prepare('SELECT id FROM sections WHERE course_id = ? AND title = ?').get(courseId, section.title) as any
+      const existingSection = await db.get('SELECT id FROM sections WHERE course_id = ? AND title = ?', courseId, section.title) as any
       const sectionId = existingSection ? existingSection.id : section.id
 
-      db.prepare(`
+      await db.run(`
         INSERT INTO sections (id, course_id, title, order_index)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET 
           title = excluded.title,
           order_index = excluded.order_index
-      `).run(sectionId, courseId, section.title, section.order_index)
+      `, sectionId, courseId, section.title, section.order_index)
 
-      section.videos.forEach((video) => {
+      for (const video of section.videos) {
         scannedFilePaths.add(video.file_path)
 
         // 4. Upsert Video
-        const existingVideo = db.prepare('SELECT id FROM videos WHERE file_path = ?').get(video.file_path) as any
+        const existingVideo = await db.get('SELECT id FROM videos WHERE file_path = ?', video.file_path) as any
         const videoId = existingVideo ? existingVideo.id : video.id
 
-        db.prepare(`
+        await db.run(`
           INSERT INTO videos (id, section_id, title, file_path, order_index)
           VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
@@ -55,40 +58,43 @@ export function saveCourse(course: Course): void {
             title = excluded.title,
             section_id = excluded.section_id,
             order_index = excluded.order_index
-        `).run(videoId, sectionId, video.title, video.file_path, video.order_index)
-      })
-    })
+        `, videoId, sectionId, video.title, video.file_path, video.order_index)
+      }
+    }
 
     // 5. Cleanup: Remove videos that no longer exist on disk
-    const allDbVideos = db.prepare(`
+    const allDbVideos = await db.all(`
       SELECT v.id, v.file_path FROM videos v 
       JOIN sections s ON v.section_id = s.id 
       WHERE s.course_id = ?
-    `).all(courseId) as any[]
+    `, courseId) as any[]
 
-    allDbVideos.forEach(v => {
+    for (const v of allDbVideos) {
       if (!scannedFilePaths.has(v.file_path)) {
-        db.prepare('DELETE FROM videos WHERE id = ?').run(v.id)
+        await db.run('DELETE FROM videos WHERE id = ?', v.id)
       }
-    })
+    }
 
     // 6. Cleanup: Remove sections that are now empty (due to video deletion) or were removed
-    const allDbSections = db.prepare('SELECT id, title FROM sections WHERE course_id = ?').all(courseId) as any[]
+    const allDbSections = await db.all('SELECT id, title FROM sections WHERE course_id = ?', courseId) as any[]
     
-    allDbSections.forEach(s => {
-      const videoCount = db.prepare('SELECT COUNT(*) as count FROM videos WHERE section_id = ?').get(s.id) as any
+    for (const s of allDbSections) {
+      const videoCount = await db.get('SELECT COUNT(*) as count FROM videos WHERE section_id = ?', s.id) as any
       if (!scannedSectionTitles.has(s.title) || videoCount.count === 0) {
-        db.prepare('DELETE FROM sections WHERE id = ?').run(s.id)
+        await db.run('DELETE FROM sections WHERE id = ?', s.id)
       }
-    })
-  })
+    }
 
-  transaction(course)
+    await db.run('COMMIT')
+  } catch (error) {
+    await db.run('ROLLBACK')
+    throw error
+  }
 }
 
-export function getAllCourses(): Course[] {
-  const db = getDatabase()
-  const rows = db.prepare(`
+export async function getAllCourses(): Promise<Course[]> {
+  const db = await getDatabase()
+  const rows = await db.all(`
     SELECT c.*, 
         (SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id AND v.is_completed = 1) * 100.0 / 
       NULLIF((SELECT COUNT(*) FROM videos v JOIN sections s ON v.section_id = s.id WHERE s.course_id = c.id), 0) as progress,
@@ -96,7 +102,7 @@ export function getAllCourses(): Course[] {
     FROM courses c
     WHERE c.is_hidden = 0
     ORDER BY last_accessed DESC
-  `).all() as any[]
+  `) as any[]
 
   return rows.map((row) => ({
     ...row,
@@ -106,17 +112,17 @@ export function getAllCourses(): Course[] {
   }))
 }
 
-export function getCourseById(id: string): Course | null {
-  const db = getDatabase()
-  const courseRow = db.prepare('SELECT * FROM courses WHERE id = ?').get(id) as any
+export async function getCourseById(id: string): Promise<Course | null> {
+  const db = await getDatabase()
+  const courseRow = await db.get('SELECT * FROM courses WHERE id = ?', id) as any
   if (!courseRow) return null
 
-  const sections = db.prepare('SELECT * FROM sections WHERE course_id = ? ORDER BY order_index').all(id) as any[]
+  const sections = await db.all('SELECT * FROM sections WHERE course_id = ? ORDER BY order_index', id) as any[]
   
   const course: Course = {
     ...courseRow,
-    sections: sections.map((s) => {
-      const videos = db.prepare('SELECT * FROM videos WHERE section_id = ? ORDER BY order_index').all(s.id) as any[]
+    sections: await Promise.all(sections.map(async (s) => {
+      const videos = await db.all('SELECT * FROM videos WHERE section_id = ? ORDER BY order_index', s.id) as any[]
       return {
         ...s,
         videos: videos.map(v => ({
@@ -124,42 +130,41 @@ export function getCourseById(id: string): Course | null {
           is_completed: Boolean(v.is_completed)
         }))
       }
-    })
+    }))
   }
 
   return course
 }
 
-export function updateVideoProgress(videoId: string, progress: number, isCompleted: boolean): string | null {
-  const db = getDatabase()
+export async function updateVideoProgress(videoId: string, progress: number, isCompleted: boolean): Promise<string | null> {
+  const db = await getDatabase()
   
-  const oldVideo = db.prepare('SELECT progress FROM videos WHERE id = ?').get(videoId) as any
+  const oldVideo = await db.get('SELECT progress FROM videos WHERE id = ?', videoId) as any
   const oldProgress = oldVideo?.progress || 0
   const diff = progress - oldProgress
 
-  db.prepare('UPDATE videos SET progress = ?, is_completed = ? WHERE id = ?')
-    .run(progress, isCompleted ? 1 : 0, videoId)
+  await db.run('UPDATE videos SET progress = ?, is_completed = ? WHERE id = ?', progress, isCompleted ? 1 : 0, videoId)
   
-  db.prepare(`
+  await db.run(`
     UPDATE courses SET last_accessed = CURRENT_TIMESTAMP, last_video_id = ? 
     WHERE id = (SELECT s.course_id FROM sections s JOIN videos v ON v.section_id = s.id WHERE v.id = ?)
-  `).run(videoId, videoId)
+  `, videoId, videoId)
 
-  const courseRow = db.prepare('SELECT s.course_id as course_id FROM sections s JOIN videos v ON v.section_id = s.id WHERE v.id = ?').get(videoId) as any
+  const courseRow = await db.get('SELECT s.course_id as course_id FROM sections s JOIN videos v ON v.section_id = s.id WHERE v.id = ?', videoId) as any
   const courseId = courseRow ? courseRow.course_id : null
 
   if (diff > 0) {
-    logActivity(diff)
+    await logActivity(diff)
   }
 
   if (courseId && isCompleted) {
-    const courseData = getCourseById(courseId) as any
+    const courseData = await getCourseById(courseId) as any
     if (courseData && !courseData.is_completed) {
       const allVideos = courseData.sections.flatMap(s => s.videos)
       const finishedCount = allVideos.filter(v => v.is_completed).length
       if (finishedCount === allVideos.length) {
-         db.prepare('UPDATE courses SET is_completed = 1 WHERE id = ?').run(courseId)
-         logCourseCompletion()
+         await db.run('UPDATE courses SET is_completed = 1 WHERE id = ?', courseId)
+         await logCourseCompletion()
       }
     }
   }
@@ -167,70 +172,70 @@ export function updateVideoProgress(videoId: string, progress: number, isComplet
   return courseId
 }
 
-export function updateVideoDuration(videoId: string, duration: number): void {
-  const db = getDatabase()
-  db.prepare('UPDATE videos SET duration = ? WHERE id = ?').run(duration, videoId)
+export async function updateVideoDuration(videoId: string, duration: number): Promise<void> {
+  const db = await getDatabase()
+  await db.run('UPDATE videos SET duration = ? WHERE id = ?', duration, videoId)
 }
 
-export function renameCourse(courseId: string, newTitle: string): void {
-  const db = getDatabase()
-  db.prepare('UPDATE courses SET title = ? WHERE id = ?').run(newTitle, courseId)
+export async function renameCourse(courseId: string, newTitle: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('UPDATE courses SET title = ? WHERE id = ?', newTitle, courseId)
 }
 
-export function updateCourseIcon(courseId: string, icon: string): void {
-  const db = getDatabase()
-  db.prepare('UPDATE courses SET icon = ? WHERE id = ?').run(icon, courseId)
+export async function updateCourseIcon(courseId: string, icon: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('UPDATE courses SET icon = ? WHERE id = ?', icon, courseId)
 }
 
-export function updateCourseLastVideo(courseId: string, videoId: string): void {
-  const db = getDatabase()
-  db.prepare('UPDATE courses SET last_video_id = ?, last_accessed = CURRENT_TIMESTAMP WHERE id = ?').run(videoId, courseId)
+export async function updateCourseLastVideo(courseId: string, videoId: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('UPDATE courses SET last_video_id = ?, last_accessed = CURRENT_TIMESTAMP WHERE id = ?', videoId, courseId)
 }
 
-export function removeCourse(courseId: string): void {
-  const db = getDatabase()
-  db.prepare('UPDATE courses SET is_hidden = 1 WHERE id = ?').run(courseId)
+export async function removeCourse(courseId: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('UPDATE courses SET is_hidden = 1 WHERE id = ?', courseId)
 }
 
-export function resetCourseProgress(courseId: string): void {
-  const db = getDatabase()
-  db.prepare(`
+export async function resetCourseProgress(courseId: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run(`
     UPDATE videos 
     SET progress = 0, is_completed = 0 
     WHERE section_id IN (SELECT id FROM sections WHERE course_id = ?)
-  `).run(courseId)
+  `, courseId)
 }
 
-export function logActivity(seconds: number): void {
-  const db = getDatabase()
+export async function logActivity(seconds: number): Promise<void> {
+  const db = await getDatabase()
   const today = new Date().toISOString().split('T')[0]
   
-  db.prepare(`
+  await db.run(`
     INSERT INTO activity_log (date, seconds_watched) 
     VALUES (?, ?)
     ON CONFLICT(date) DO UPDATE SET seconds_watched = seconds_watched + ?
-  `).run(today, seconds, seconds)
+  `, today, seconds, seconds)
 }
 
-function logCourseCompletion(): void {
-  const db = getDatabase()
+async function logCourseCompletion(): Promise<void> {
+  const db = await getDatabase()
   const today = new Date().toISOString().split('T')[0]
   
-  db.prepare(`
+  await db.run(`
     INSERT INTO activity_log (date, courses_completed) 
     VALUES (?, 1)
     ON CONFLICT(date) DO UPDATE SET courses_completed = courses_completed + 1
-  `).run(today)
+  `, today)
 }
 
-export function getActivityLog(): any[] {
-  const db = getDatabase()
-  return db.prepare('SELECT * FROM activity_log ORDER BY date ASC').all()
+export async function getActivityLog(): Promise<any[]> {
+  const db = await getDatabase()
+  return db.all('SELECT * FROM activity_log ORDER BY date ASC')
 }
 
-export function getDailyStreak(): { streak: number, secondsToday: number } {
-  const db = getDatabase()
-  const rows = db.prepare('SELECT date, seconds_watched FROM activity_log ORDER BY date DESC').all() as any[]
+export async function getDailyStreak(): Promise<{ streak: number, secondsToday: number }> {
+  const db = await getDatabase()
+  const rows = await db.all('SELECT date, seconds_watched FROM activity_log ORDER BY date DESC') as any[]
   
   const todayStr = new Date().toISOString().split('T')[0]
   const todayRow = rows.find(r => r.date === todayStr)
@@ -262,42 +267,42 @@ export function getDailyStreak(): { streak: number, secondsToday: number } {
   return { streak, secondsToday }
 }
 
-export function deleteCoursePermanently(courseId: string): void {
-  const db = getDatabase()
-  db.prepare('DELETE FROM courses WHERE id = ?').run(courseId)
+export async function deleteCoursePermanently(courseId: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('DELETE FROM courses WHERE id = ?', courseId)
 }
 
-export function saveNote(videoId: string, timestamp: number, content: string): void {
-  const db = getDatabase()
+export async function saveNote(videoId: string, timestamp: number, content: string): Promise<void> {
+  const db = await getDatabase()
   const id = uuidv4()
-  db.prepare(`
+  await db.run(`
     INSERT INTO notes (id, video_id, timestamp_seconds, content)
     VALUES (?, ?, ?, ?)
-  `).run(id, videoId, timestamp, content)
+  `, id, videoId, timestamp, content)
 }
 
-export function getNotesForCourse(courseId: string): any[] {
-  const db = getDatabase()
-  return db.prepare(`
+export async function getNotesForCourse(courseId: string): Promise<any[]> {
+  const db = await getDatabase()
+  return db.all(`
     SELECT n.*, v.title as video_title, v.file_path, s.title as section_title
     FROM notes n
     JOIN videos v ON n.video_id = v.id
     JOIN sections s ON v.section_id = s.id
     WHERE s.course_id = ?
     ORDER BY s.order_index ASC, v.order_index ASC, n.timestamp_seconds ASC
-  `).all(courseId)
+  `, courseId)
 }
 
-export function deleteNote(noteId: string): void {
-  const db = getDatabase()
-  db.prepare('DELETE FROM notes WHERE id = ?').run(noteId)
+export async function deleteNote(noteId: string): Promise<void> {
+  const db = await getDatabase()
+  await db.run('DELETE FROM notes WHERE id = ?', noteId)
 }
 
-export function exportNotesMarkdown(courseId: string): string {
-  const courseData = getCourseById(courseId)
+export async function exportNotesMarkdown(courseId: string): Promise<string> {
+  const courseData = await getCourseById(courseId)
   if (!courseData) return ''
 
-  const notes = getNotesForCourse(courseId)
+  const notes = await getNotesForCourse(courseId)
   let md = `# Learning Notes: ${courseData.title}\n\n`
   md += `Exported on: ${new Date().toLocaleString()}\n\n`
 

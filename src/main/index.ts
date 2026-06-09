@@ -82,7 +82,7 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Register media protocol handler as a stream so we can set correct MIME types
   protocol.registerStreamProtocol('media', (request, callback) => {
     try {
@@ -159,7 +159,7 @@ app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
-  initDatabase()
+  await initDatabase()
   // Ensure macOS dock icon uses the same icon if available
   if (process.platform === 'darwin') {
     try {
@@ -185,11 +185,11 @@ app.whenReady().then(() => {
 
   // IPC Handlers
   ipcMain.handle('get-courses', async () => {
-    return getAllCourses()
+    return await getAllCourses()
   })
 
   ipcMain.handle('get-course-by-id', async (_, id: string) => {
-    return getCourseById(id)
+    return await getCourseById(id)
   })
 
   ipcMain.handle('select-folder', async () => {
@@ -201,13 +201,13 @@ app.whenReady().then(() => {
     } else {
       const rootPath = filePaths[0]
       const course = await scanCourseFolder(rootPath)
-      saveCourse(course)
+      await saveCourse(course)
       return course
     }
   })
 
   ipcMain.handle('update-video-progress', async (_, videoId: string, progress: number, isCompleted: boolean) => {
-    const courseId = updateVideoProgress(videoId, progress, isCompleted)
+    const courseId = await updateVideoProgress(videoId, progress, isCompleted)
     try {
       // Only broadcast update for completion events to avoid high-frequency UI flickering
       if (courseId && isCompleted) {
@@ -220,50 +220,49 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('update-video-duration', async (_, videoId: string, duration: number) => {
-    import('./services/courseService').then(service => {
-      service.updateVideoDuration(videoId, duration)
-    })
+    const service = await import('./services/courseService')
+    await service.updateVideoDuration(videoId, duration)
   })
 
   ipcMain.handle('rename-course', async (_, courseId: string, newTitle: string) => {
-    renameCourse(courseId, newTitle)
+    await renameCourse(courseId, newTitle)
   })
 
   ipcMain.handle('update-course-icon', async (_, courseId: string, icon: string) => {
-    updateCourseIcon(courseId, icon)
+    await updateCourseIcon(courseId, icon)
   })
 
   ipcMain.handle('update-course-last-video', async (_, courseId: string, videoId: string) => {
-    updateCourseLastVideo(courseId, videoId)
+    await updateCourseLastVideo(courseId, videoId)
   })
 
   ipcMain.handle('remove-course', async (_, courseId: string) => {
-    removeCourse(courseId)
+    await removeCourse(courseId)
   })
 
   ipcMain.handle('reset-course', async (_, courseId: string) => {
-    resetCourseProgress(courseId)
+    await resetCourseProgress(courseId)
   })
 
   ipcMain.handle('get-daily-streak', async () => {
-    return getDailyStreak()
+    return await getDailyStreak()
   })
 
   ipcMain.handle('get-activity-log', async () => {
-    return getActivityLog()
+    return await getActivityLog()
   })
 
   ipcMain.handle('delete-course-permanently', async (_, courseId: string) => {
-    deleteCoursePermanently(courseId)
+    await deleteCoursePermanently(courseId)
   })
 
   ipcMain.handle('refresh-course', async (_, courseId: string) => {
-    const course = getCourseById(courseId)
+    const course = await getCourseById(courseId)
     if (course && course.root_path) {
       const updatedCourse = await scanCourseFolder(course.root_path)
       // Merge with existing ID to avoid duplicate course
       updatedCourse.id = courseId
-      saveCourse(updatedCourse)
+      await saveCourse(updatedCourse)
       
       // Broadcast the update to all windows so the UI refreshes
       BrowserWindow.getAllWindows().forEach(w => {
@@ -279,19 +278,19 @@ app.whenReady().then(() => {
 
   // Notes IPC
   ipcMain.handle('save-note', async (_, videoId: string, timestamp: number, content: string) => {
-    saveNote(videoId, timestamp, content)
+    await saveNote(videoId, timestamp, content)
   })
 
   ipcMain.handle('get-notes', async (_, courseId: string) => {
-    return getNotesForCourse(courseId)
+    return await getNotesForCourse(courseId)
   })
 
   ipcMain.handle('delete-note', async (_, noteId: string) => {
-    deleteNote(noteId)
+    await deleteNote(noteId)
   })
 
   ipcMain.handle('export-notes', async (event, courseId: string) => {
-    const markdown = exportNotesMarkdown(courseId)
+    const markdown = await exportNotesMarkdown(courseId)
     const win = BrowserWindow.fromWebContents(event.sender)
     
     const { canceled, filePath } = await dialog.showSaveDialog(win!, {
@@ -322,16 +321,16 @@ app.whenReady().then(() => {
 
   // Transcription IPC
   ipcMain.handle('generate-transcript', async (_, videoId: string, videoPath: string) => {
-    return generateTranscript(videoId, videoPath)
+    return await generateTranscript(videoId, videoPath)
   })
 
   ipcMain.handle('get-transcript', async (_, videoId: string) => {
-    return getTranscript(videoId)
+    return await getTranscript(videoId)
   })
 
   // Apple Speech IPC (Now Unified for Win/Mac)
   ipcMain.handle('apple-speech-check-available', async (_, locale?: string) => {
-    return speechService.checkSpeechAvailable(locale)
+    return await speechService.checkSpeechAvailable(locale)
   })
 
   ipcMain.handle('apple-speech-request-permissions', async () => {
@@ -349,7 +348,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('apple-speech-transcribe-video', async (event, videoId: string, videoPath: string, locale?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    return speechService.transcribeVideo(videoId, videoPath, win, locale)
+    return await speechService.transcribeVideo(videoId, videoPath, win, locale)
   })
 
   ipcMain.handle('apple-speech-start-mic', async (event, locale?: string) => {
@@ -363,7 +362,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('apple-speech-save-mic-transcript', async (_, videoId: string, segments: any[]) => {
-    return speechService.saveMicTranscript(videoId, segments)
+    return await speechService.saveMicTranscript(videoId, segments)
   })
 
   ipcMain.handle('apple-speech-cancel-video-transcribe', async () => {
@@ -372,7 +371,7 @@ app.whenReady().then(() => {
 
   // YouTube IPC
   ipcMain.handle('get-youtube-info', async (_, url: string, browser?: string) => {
-    return getPlaylistInfo(url, browser)
+    return await getPlaylistInfo(url, browser)
   })
 
   ipcMain.handle('cancel-download', async (_, videoId: string) => {
@@ -391,7 +390,7 @@ app.whenReady().then(() => {
     // After download is complete, rescan the folder and update/save the course
     try {
       const course = await scanCourseFolder(targetFolder)
-      saveCourse(course)
+      await saveCourse(course)
       
       // Broadcast the update to all windows so the UI refreshes
       BrowserWindow.getAllWindows().forEach(w => {

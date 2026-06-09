@@ -95,17 +95,14 @@ export async function generateTranscript(videoId: string, videoPath: string): Pr
     }
 
     // Save to DB
-    const db = getDatabase()
-    const insertStmt = db.prepare(`
-      INSERT INTO transcripts (id, video_id, text, start_time, end_time)
-      VALUES (?, ?, ?, ?, ?)
-    `)
+    const db = await getDatabase()
 
     const segments: TranscriptSegment[] = []
     
-    const transaction = db.transaction(() => {
+    try {
+      await db.run('BEGIN TRANSACTION')
       // Clear existing for this video
-      db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId)
+      await db.run('DELETE FROM transcripts WHERE video_id = ?', videoId)
       
       for (const chunk of output.chunks) {
         const seg = {
@@ -115,12 +112,18 @@ export async function generateTranscript(videoId: string, videoPath: string): Pr
           start_time: chunk.timestamp[0],
           end_time: chunk.timestamp[1] !== null ? chunk.timestamp[1] : chunk.timestamp[0] + 5
         }
-        insertStmt.run(seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
+        await db.run(`
+          INSERT INTO transcripts (id, video_id, text, start_time, end_time)
+          VALUES (?, ?, ?, ?, ?)
+        `, seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
         segments.push(seg)
       }
-    })
+      await db.run('COMMIT')
+    } catch (e) {
+      await db.run('ROLLBACK')
+      throw e
+    }
 
-    transaction()
     return segments
 
   } catch (error) {
@@ -129,7 +132,7 @@ export async function generateTranscript(videoId: string, videoPath: string): Pr
   }
 }
 
-export function getTranscript(videoId: string): TranscriptSegment[] {
-  const db = getDatabase()
-  return db.prepare('SELECT * FROM transcripts WHERE video_id = ? ORDER BY start_time ASC').all(videoId) as TranscriptSegment[]
+export async function getTranscript(videoId: string): Promise<TranscriptSegment[]> {
+  const db = await getDatabase()
+  return await db.all('SELECT * FROM transcripts WHERE video_id = ? ORDER BY start_time ASC', videoId) as TranscriptSegment[]
 }

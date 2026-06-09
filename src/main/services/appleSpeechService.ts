@@ -146,10 +146,10 @@ export function checkAppleSpeechAvailable(locale?: string): Promise<{ available:
   })
 }
 
-function getExistingSegments(videoId: string): TranscriptSegment[] {
+async function getExistingSegments(videoId: string): Promise<TranscriptSegment[]> {
   try {
-    const db = getDatabase()
-    return db.prepare('SELECT id, video_id, text, start_time, end_time FROM transcripts WHERE video_id = ? ORDER BY start_time ASC').all(videoId) as TranscriptSegment[]
+    const db = await getDatabase()
+    return await db.all('SELECT id, video_id, text, start_time, end_time FROM transcripts WHERE video_id = ? ORDER BY start_time ASC', videoId) as TranscriptSegment[]
   } catch (err) {
     console.error('Failed to get existing segments:', err)
     return []
@@ -178,7 +178,7 @@ export async function transcribeVideoWithAppleSpeech(
 
     if (isFileTranscriptionCancelled) {
       cleanupTempFiles(videoId)
-      return getExistingSegments(videoId)
+      return await getExistingSegments(videoId)
     }
 
     // Step 2: Segment the extracted wav file into chunks
@@ -193,7 +193,7 @@ export async function transcribeVideoWithAppleSpeech(
 
     if (isFileTranscriptionCancelled) {
       cleanupTempFiles(videoId)
-      return getExistingSegments(videoId)
+      return await getExistingSegments(videoId)
     }
 
     // Find and sort all segment files
@@ -215,7 +215,7 @@ export async function transcribeVideoWithAppleSpeech(
     for (let i = 0; i < chunkFiles.length; i++) {
       if (isFileTranscriptionCancelled) {
         cleanupTempFiles(videoId)
-        return getExistingSegments(videoId)
+        return await getExistingSegments(videoId)
       }
 
       const chunkFile = chunkFiles[i]
@@ -243,14 +243,14 @@ export async function transcribeVideoWithAppleSpeech(
       } catch (err) {
         if (isFileTranscriptionCancelled) {
           cleanupTempFiles(videoId)
-          return getExistingSegments(videoId)
+          return await getExistingSegments(videoId)
         }
         throw err
       }
     }
 
     // Step 3: Save to DB
-    saveSegmentsToDb(videoId, allSegments)
+    await saveSegmentsToDb(videoId, allSegments)
 
     // Cleanup temp files
     cleanupTempFiles(videoId)
@@ -264,7 +264,7 @@ export async function transcribeVideoWithAppleSpeech(
     // Cleanup on error
     cleanupTempFiles(videoId)
     if (isFileTranscriptionCancelled || error.message === 'Transcription cancelled') {
-      return getExistingSegments(videoId)
+      return await getExistingSegments(videoId)
     }
     throw error
   }
@@ -397,23 +397,25 @@ function runFileTranscription(
   })
 }
 
-function saveSegmentsToDb(videoId: string, segments: TranscriptSegment[]): void {
-  const db = getDatabase()
-  const insertStmt = db.prepare(`
-    INSERT INTO transcripts (id, video_id, text, start_time, end_time)
-    VALUES (?, ?, ?, ?, ?)
-  `)
+async function saveSegmentsToDb(videoId: string, segments: TranscriptSegment[]): Promise<void> {
+  const db = await getDatabase()
 
-  const transaction = db.transaction(() => {
+  try {
+    await db.run('BEGIN TRANSACTION')
     // Clear existing transcripts for this video
-    db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId)
+    await db.run('DELETE FROM transcripts WHERE video_id = ?', videoId)
 
     for (const seg of segments) {
-      insertStmt.run(seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
+      await db.run(`
+        INSERT INTO transcripts (id, video_id, text, start_time, end_time)
+        VALUES (?, ?, ?, ?, ?)
+      `, seg.id, seg.video_id, seg.text, seg.start_time, seg.end_time)
     }
-  })
-
-  transaction()
+    await db.run('COMMIT')
+  } catch (e) {
+    await db.run('ROLLBACK')
+    throw e
+  }
 }
 
 export function startMicTranscription(win: BrowserWindow, locale?: string): void {
@@ -539,24 +541,26 @@ export function cancelVideoTranscription(): void {
   }
 }
 
-export function saveMicTranscript(
+export async function saveMicTranscript(
   videoId: string,
   segments: Array<{ text: string; start: number; end: number }>
-): void {
-  const db = getDatabase()
-  const insertStmt = db.prepare(`
-    INSERT INTO transcripts (id, video_id, text, start_time, end_time)
-    VALUES (?, ?, ?, ?, ?)
-  `)
+): Promise<void> {
+  const db = await getDatabase()
 
-  const transaction = db.transaction(() => {
+  try {
+    await db.run('BEGIN TRANSACTION')
     // Clear existing transcripts for this video
-    db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId)
+    await db.run('DELETE FROM transcripts WHERE video_id = ?', videoId)
 
     for (const seg of segments) {
-      insertStmt.run(uuidv4(), videoId, seg.text.trim(), seg.start, seg.end)
+      await db.run(`
+        INSERT INTO transcripts (id, video_id, text, start_time, end_time)
+        VALUES (?, ?, ?, ?, ?)
+      `, uuidv4(), videoId, seg.text.trim(), seg.start, seg.end)
     }
-  })
-
-  transaction()
+    await db.run('COMMIT')
+  } catch (e) {
+    await db.run('ROLLBACK')
+    throw e
+  }
 }
